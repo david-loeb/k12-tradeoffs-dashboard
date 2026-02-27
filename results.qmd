@@ -2,6 +2,8 @@
 title: "K-12 Tradeoffs"
 format: dashboard
 theme: cosmo
+output-file: 'index'
+output-ext: 'html'
 include-in-header:
   text: |
     <style> 
