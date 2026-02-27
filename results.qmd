@@ -1,0 +1,2998 @@
+---
+title: "K-12 Tradeoffs"
+format: dashboard
+theme: cosmo
+include-in-header:
+  text: |
+    <style> 
+      .quarto-dashboard .sidebar form {
+        margin-bottom: 0.1em;
+      }
+      .sidebar-section-header p {
+        margin-bottom: 0.1em;
+        margin-top: 1em;
+      }
+      .sidebar-section-header p::before {
+        content: "";
+        display: block;
+        border-top: 1px solid black;
+        width: 100%;
+      }
+      #bslib-sidebar-1 {
+        position: sticky;
+        top: 0;
+        width: 170px;
+      }
+      .observablehq--string {color: white;}
+    </style>
+---
+
+```{ojs}
+//| output: false
+d3 = require('d3@7');
+import { aq } from '@uwdata/arquero';
+```
+
+::: {.content-hidden}
+# Data
+:::
+
+```{ojs}
+//| output: false
+dataAllStates0 = aq.loadArrow('data/treat-groups_all-data.arrow');
+dataTreatMeans0 = aq.loadArrow('data/treat_means.arrow');
+dataCtrlMeansDiD0 = aq.loadArrow('data/did_ctrl_means.arrow');
+dataCtrlMeansSynth0 = aq.loadArrow('data/synth_ctrl_means.arrow');
+dataCtrlStatesDiD0 = aq.loadArrow('data/did_ctrl_states.arrow');
+dataCtrlStatesSynth0 = aq.loadArrow('data/synth_ctrl_states.arrow');
+dataResSynth0 = aq.loadArrow('data/synth_res.arrow');
+dataResDiD0 = aq.loadArrow('data/did_res.arrow');
+```
+
+```{ojs}
+//| output: false
+dataAllStates = dataAllStates0.objects();
+dataTreatMeans = dataTreatMeans0.objects();
+dataCtrlMeansDiD = dataCtrlMeansDiD0.objects();
+dataCtrlMeansSynth = dataCtrlMeansSynth0.objects();
+dataCtrlStatesDiD = dataCtrlStatesDiD0.objects();
+dataCtrlStatesSynth = dataCtrlStatesSynth0.objects();
+dataResSynth = dataResSynth0.objects();
+dataResDiD = dataResDiD0.objects();
+```
+
+::: {.content-hidden}
+## Trends
+:::
+
+```{ojs}
+//| output: false
+outcomeName = fe ? selectedOutcome + '_fe' : selectedOutcome;
+```
+
+```{ojs}
+//| output: false
+dataTreatMeansUse = {
+  let dataFilt = dataTreatMeans.filter(d => d.treat_spec === treatSpec);
+  if (dropAK) {
+    dataFilt = dataFilt.filter(d => d.treat_group !== '2000');
+    dataFilt = dataFilt.map(d => 
+      d.treat_group === '2000 no ak' ? {...d, treat_group: '2000'} : d
+    );
+  } else {
+    dataFilt = dataFilt.filter(d => d.treat_group !== '2000 no ak');
+  }
+  let dataNonAgg = dataFilt.filter(d => /\d\d\d\d/.test(d.treat_group));
+  if (/\d/.test(stacked)) {
+    dataNonAgg = dataNonAgg.filter(d => 
+      d.year < Number(d.treat_group) + Number(stacked)
+    );
+  }
+  const dataAgg = dataFilt.filter(d => /aggregate/.test(d.treat_group));
+  let dataOut = [...dataNonAgg, ...dataAgg];
+  dataOut = dataOut.map(d => ({
+    treat_group: d.treat_group, year: d.year, e: d.e, outcome: d[outcomeName]
+  }));
+  return dataOut;
+}
+```
+
+```{ojs}
+//| output: false
+dataCtrlMeansDiDUse = {
+  const dataFilt = dataCtrlMeansDiD.filter(
+    d => d.ctrl_spec === ctrlSpecDiD && d.treat_spec === treatSpec
+  );
+  const dataOut = dataFilt.map(d => ({
+    treat_group: d.treat_group, year: d.year, e: d.e, outcome: d[outcomeName]
+  }));
+  return dataOut;
+}
+```
+
+```{ojs}
+//| output: false
+dataCtrlMeansSynthUse = {
+  let dataFilt = dataCtrlMeansSynth.filter(d => 
+    d.ctrl_spec === ctrlSpecSynth && d.treat_spec === treatSpec
+  );
+  if (dropAK) {
+    dataFilt = dataFilt.filter(d => d.treat_group !== '2000');
+    dataFilt = dataFilt.map(d => 
+      d.treat_group === '2000 no ak' ? {...d, treat_group: '2000'} : d
+    );
+  } else {
+    dataFilt = dataFilt.filter(d => d.treat_group !== '2000 no ak');
+  }
+  const dataOut = dataFilt.map(d => ({
+    treat_group: d.treat_group, year: d.year, e: d.e, outcome: d[outcomeName]
+  }));
+  return dataOut;
+}
+```
+
+```{ojs}
+//| output: false
+dataAllStatesUse = {
+  let dataFilt = dataAllStates.filter(d =>
+    d.treat_spec === treatSpec
+  );
+  if (dropAK) dataFilt = dataFilt.filter(d => d.st !== 'AK');
+  if (/\d/.test(stacked)) {
+    dataFilt = dataFilt.filter(d => 
+      d.year < Number(d.treat_group) + Number(stacked)
+    );
+  }
+  const dataOut = dataFilt.map(d => ({
+    treat_group: d.treat_group, st: d.st, treated: d.treated, 
+    year: d.year, e: d.e, outcome: d[outcomeName]
+  }));
+  return dataOut;
+}
+```
+
+```{ojs}
+//| output: false
+dataCtrlStatesDiDUse = dataCtrlStatesDiD.filter(d => 
+  d.ctrl_spec === ctrlSpecDiD && d.treat_spec === treatSpec
+);
+```
+
+```{ojs}
+//| output: false
+dataCtrlStatesSynthUse = {
+  let dataFilt = dataCtrlStatesSynth.filter(d => 
+    d.ctrl_spec === ctrlSpecSynth 
+      && d.treat_spec === treatSpec
+      && outcomeName.includes(d.y)
+  );
+  if (dropAK) {
+    dataFilt = dataFilt.filter(d => d.treat_group !== '2000');
+    dataFilt = dataFilt.map(d => 
+      d.treat_group === '2000 no ak' ? {...d, treat_group: '2000'} : d
+    );
+  } else {
+    dataFilt = dataFilt.filter(d => d.treat_group !== '2000 no ak');
+  }
+  return dataFilt;
+}
+```
+
+```{ojs}
+//| output: false
+dataK12Means = {
+  const k12YName = fe ? 
+    'e027_elem_educ_direct_exp_fe' : 'e027_elem_educ_direct_exp';
+
+  let dataTreatFilt = dataTreatMeans.filter(d => d.treat_spec === treatSpec);
+  if (dropAK) {
+    dataTreatFilt = dataTreatFilt.filter(d => d.treat_group !== '2000');
+    dataTreatFilt = dataTreatFilt.map(d => 
+      d.treat_group === '2000 no ak' ? {...d, treat_group: '2000'} : d
+    );
+  } else {
+    dataTreatFilt = dataTreatFilt.filter(d => d.treat_group !== '2000 no ak');
+  }
+  let dataTreatNonAgg = dataTreatFilt.filter(d => /\d\d\d\d/.test(d.treat_group));
+  if (/\d/.test(stacked)) {
+    dataTreatNonAgg = dataTreatNonAgg.filter(d => 
+      d.year < Number(d.treat_group) + Number(stacked)
+    );
+  }
+  const dataTreatAgg = dataTreatFilt.filter(d => /aggregate/.test(d.treat_group));
+  const dataTreatClean = [...dataTreatNonAgg, ...dataTreatAgg];
+  const k12MeansTreat = dataTreatClean.map(d => ({
+    treat_group: d.treat_group, 
+    year: d.year, 
+    e: d.e,
+    outcome: d[k12YName],
+    id: 'treat group',
+    st: 'n/a'
+  }));
+
+  let treatedStates = dataAllStates.filter(d => 
+    d.treated === 1 && d.treat_spec === treatSpec
+  );
+  if (dropAK) treatedStates = treatedStates.filter(d => d.st !== 'AK');
+  if (/\d/.test(stacked)) {
+    treatedStates = treatedStates.filter(d => 
+      d.year < Number(d.treat_group) + Number(stacked)
+    );
+  }
+  const k12StatesTreat = treatedStates.map(d => ({
+    treat_group: d.treat_group, 
+    year: d.year, 
+    e: d.e,
+    outcome: d[k12YName],
+    id: 'treat st',
+    st: d.st
+  }));
+
+  const dataDiDFilt = dataCtrlMeansDiD.filter(d => 
+    d.ctrl_spec === ctrlSpecDiD && d.treat_spec === treatSpec
+  );
+  const k12MeansCtrlDiD = dataDiDFilt.map(d => ({
+    treat_group: d.treat_group, 
+    year: d.year, 
+    e: d.e,
+    outcome: d[k12YName],
+    id: 'ctrl did',
+    st: 'n/a'
+  }));
+
+  let dataSynthFilt = dataCtrlMeansSynth.filter(d => 
+    d.ctrl_spec === ctrlSpecSynth && d.treat_spec === treatSpec
+  );
+  if (dropAK) {
+    dataSynthFilt = dataSynthFilt.filter(d => d.treat_group !== '2000');
+    dataSynthFilt = dataSynthFilt.map(d => 
+      d.treat_group === '2000 no ak' ? {...d, treat_group: '2000'} : d
+    );
+  } else {
+    dataSynthFilt = dataSynthFilt.filter(d => d.treat_group !== '2000 no ak');
+  }
+  const k12MeansSynthDiD = dataSynthFilt.map(d => ({
+    treat_group: d.treat_group, 
+    year: d.year, 
+    e: d.e,
+    outcome: d[k12YName],
+    id: 'ctrl synth',
+    st: 'n/a'
+  }));
+
+  return [
+    ...k12MeansTreat, ...k12StatesTreat, 
+    ...k12MeansCtrlDiD, ...k12MeansSynthDiD
+  ];
+}
+```
+
+::: {.content-hidden}
+## Model Results
+:::
+
+```{ojs}
+//| output: false
+dataResDiDUseG = {
+  const re = /\d|aggregate/
+  const simultCband = modSpecDiD.includes('simult cband') ? true : false;
+  const dataFilt = dataResDiD.filter(d =>
+    d.ctrl_spec === ctrlSpecDiD
+      && d.treat_spec === treatSpec
+      && d.simult_cband === simultCband
+      && d.y === selectedOutcome
+      && re.test(d.g)
+  );
+  const dataOut = dataFilt.map(d => ({
+    treat_group: d.g, year: d.year, e: d.e,
+    att: d.att, ci_low: d.ci_low, ci_up: d.ci_up
+  }));
+  return dataOut;
+}
+```
+
+```{ojs}
+//| output: false
+dataResSynthUseG = {
+  let dataFilt = dataResSynth.filter(d => 
+    d.ctrl_spec === ctrlSpecSynth
+      && d.treat_spec === treatSpec
+      && d.y === selectedOutcome 
+      && d.year !== null
+      && d.time_cohort === true
+  );
+  if (dropAK) {
+    dataFilt = dataFilt.filter(d => d.g !== '2000');
+    dataFilt = dataFilt.map(d => 
+      d.g === '2000 no ak' ? {...d, g: '2000'} : d
+    );
+  } else {
+    dataFilt = dataFilt.filter(d => d.g !== '2000 no ak');
+  }
+  const dataOut = dataFilt.map(d => ({
+    treat_group: d.g, year: d.year, e: d.e,
+    att: d.att, ci_low: d.ci_low, ci_up: d.ci_up
+  }));
+  return dataOut;
+}
+```
+
+```{ojs}
+//| output: false
+dataResDiDUseSt = {
+  const re = /[A-Z][A-Z]/
+  const simultCband = modSpecDiD.includes('simult cband') ? true : false;
+  const dataFilt = dataResDiD.filter(d => 
+    d.ctrl_spec === ctrlSpecDiD
+      && d.treat_spec === treatSpec
+      && d.simult_cband === simultCband
+      && d.y === selectedOutcome 
+      && re.test(d.g)
+  );
+  const dataOut = dataFilt.map(d => ({
+    treat_group: d.g, year: d.year, e: d.e,
+    att: d.att, ci_low: d.ci_low, ci_up: d.ci_up
+  }));
+  return dataOut;
+}
+```
+
+```{ojs}
+//| output: false
+dataResSynthUseSt = {
+  const dataFilt = dataResSynth.filter(d => 
+    d.ctrl_spec === ctrlSpecSynth 
+      && d.treat_spec === treatSpec
+      && d.y === selectedOutcome 
+      && d.time_cohort === false
+  );
+  const dataOut = dataFilt.map(d => ({
+    treat_group: d.g, year: d.year, e: d.e,
+    att: d.att, ci_low: d.ci_low, ci_up: d.ci_up
+  }));
+  return dataOut;
+}
+```
+
+```{ojs}
+//| output: false
+dataResK12UseG = {
+  const re = /\d|aggregate/;
+  const k12ResSynthFilt = dataResSynth.filter(d => 
+    d.ctrl_spec === ctrlSpecSynth
+      && d.treat_spec === treatSpec
+      && d.y === 'e027_elem_educ_direct_exp'
+      && re.test(d.g)
+  );
+  const k12ResSynth = k12ResSynthFilt.map(d => ({
+    treat_group: d.g, year: d.year, e: d.e, att: d.att, id: 'synth'
+  }));
+
+  const simultCband = modSpecDiD.includes('simult cband') ? true : false;
+  const k12ResDiDFilt = dataResDiD.filter(d =>
+    d.ctrl_spec === ctrlSpecDiD
+      && d.treat_spec === treatSpec
+      && d.simult_cband === simultCband
+      && d.y === 'e027_elem_educ_direct_exp'
+      && re.test(d.g)
+  );
+  const k12ResDiD = k12ResDiDFilt.map(d => ({
+    treat_group: d.g, year: d.year, e: d.e, att: d.att, id: 'did'
+  }));
+  
+  return [...k12ResSynth, ...k12ResDiD];
+}
+```
+
+```{ojs}
+//| output: false
+dataResK12UseSt = {
+  const k12ResSynthFilt = dataResSynth.filter(d => 
+    d.ctrl_spec === ctrlSpecSynth
+      && d.treat_spec === treatSpec
+      && d.y === 'e027_elem_educ_direct_exp'
+      && d.time_cohort === false
+  );
+  const k12ResSynth = k12ResSynthFilt.map(d => ({
+    treat_group: d.g, year: d.year, e: d.e, att: d.att, id: 'synth'
+  }));
+
+  const re = /[A-Z][A-Z]/;
+  const simultCband = modSpecDiD.includes('simult cband') ? true : false;
+  const k12ResDiDFilt = dataResDiD.filter(d => 
+    d.ctrl_spec === ctrlSpecDiD
+      && d.treat_spec === treatSpec
+      && d.simult_cband === simultCband
+      && d.y === 'e027_elem_educ_direct_exp'
+      && re.test(d.g)
+  );
+  const k12ResDiD = k12ResDiDFilt.map(d => ({
+    treat_group: d.g, year: d.year, e: d.e, att: d.att, id: 'did'
+  }));
+  return [...k12ResSynth, ...k12ResDiD];
+}
+```
+
+::: {.content-hidden}
+## Other
+
+### Map: Treat Groups-to-States
+:::
+
+```{ojs}
+//| output: false
+treatGroupStatesMap = {
+  const treatGroups = [
+    '1990', '1991', '1992', '1993', '1994', '1995', '1996', '1997', 
+    '1998', '1999', '2000', '2001', '2002', '2003', '2004', '2005',
+    '2007', '2008', '2009', '2010', '2012', '2015'
+  ];
+  let treatStates = [];
+  for (let i = 0; i < 22; i++) {
+    let treatedStatesGroup = dataAllStates.filter(d => 
+      d.treat_spec === treatSpec
+        && treatGroups[i].includes(d.treat_group) 
+        && d.treated === 1
+    );
+    if (dropAK) {
+      treatedStatesGroup = treatedStatesGroup.filter(d => d.st !== 'AK');
+    }
+    treatStates[i] = [...new Set(treatedStatesGroup.map(d => d.st))];
+  }
+  const keysValsCombined = treatGroups.map((key, i) => [key, treatStates[i]]);
+  return new Map(keysValsCombined);
+}
+```
+
+::: {.content-hidden}
+### Treated ID Arrays
+:::
+
+```{ojs}
+//| output: false
+treatGroupIds = {
+  const init = dataTreatMeansUse.filter(d => 
+    /^\d/.test(d.treat_group)
+  );
+  const out = [...new Set(init.map(d => d.treat_group))];
+  return out.sort((a, b) => a - b);
+}
+```
+
+```{ojs}
+//| output: false
+treatStYearsLookup = {
+  const sortVar = sortChrono ? 'treat_group' : 'st';
+  let init = dataAllStatesUse.filter(d => d.treated === 1);
+  if (dropAK) init = init.filter(d => d.st !== 'AK');
+  let sorted = null;
+  sorted = init.sort((a, b) => a[sortVar] > b[sortVar] ? 1 : -1);
+  const stTreat = sorted.map(d => ({st: d.st, year: d.treat_group}));
+  const stTreatUnique = stTreat.filter((d, i, self) => 
+    i === self.findIndex(t => t.st === d.st && t.year === d.year)
+  );
+  return stTreatUnique;
+}
+```
+
+```{ojs}
+//| output: false
+treatStIds = Array.from(treatStYearsLookup.map(d => d.st));
+treatStYears = Array.from(treatStYearsLookup.map(d => d.year));
+```
+
+# Sidebar {.sidebar width="170px"}
+
+::: {.content-hidden}
+## Maps
+:::
+
+```{ojs}
+//| output: false
+outcomeMap = new Map([
+  ['K-12', 'e027_elem_educ_direct_exp'],
+  ['All Non-K-12', 'e003x_direct_expenditure_non_k12'],
+  ['Gen Non-K-12', 'e014x_direct_general_expend_non_k12'],
+  ['Higher Ed', 'e030_total_high_ed_dir_exp'],
+  ['Health', 'e055_health_direct_expend'],
+  ['Welfare', 'e090_public_welf_direct_exp'],
+  ['Parks & Rec', 'e084_parks_rec_direct_exp'],
+  ['House & Comm', 'e074_hous_com_direct_exp'],
+  ['Highways', 'e065_total_highways_dir_exp'],
+  ['Debt', 'd01_total_debt_outstanding'],
+  ['Total Rev', 'r02_total_rev_own_sources'],
+  ['Gen Rev', 'r04_gen_rev_own_sources'],
+  ['Tax Rev', 'r05_total_taxes'],
+  ['Prop Tax', 'r06_property_tax_t01'],
+  ['Non-Prop Tax', 'r07_non_property_taxes']
+]);
+```
+
+```{ojs}
+//| output: false
+treatMap = new Map([
+  ['first', 'first'],
+  ['prog', 'prog'],
+  ['first court', 'first_court'],
+  ['prog court', 'prog_court']
+]);
+```
+
+::: {.content-hidden}
+## Inputs
+:::
+
+::: {.sidebar-section-header}
+**Outcomes**
+:::
+
+```{ojs}
+viewof selectedOutcome = Inputs.radio(
+  outcomeMap, {value: 'e027_elem_educ_direct_exp'}
+);
+```
+
+```{ojs}
+viewof overlayK12 = Inputs.toggle({label: 'overlay K-12', value: true});
+```
+
+::: {.sidebar-section-header}
+**SFR Version**
+:::
+
+```{ojs}
+viewof treatSpec = Inputs.radio(treatMap, {value: 'first_court'});
+```
+
+::: {.sidebar-section-header}
+**Control Groups**
+:::
+
+```{ojs}
+viewof stacked = Inputs.radio(
+  ['5', '8', '12', 'no'],
+  {label: html`<i>stacked</i>`, value: 'no'}
+);
+```
+
+```{ojs}
+viewof showDiD = Inputs.radio(
+  ['never', 'not yet', 'none'], 
+  {label: html`<i>DiD</i>`, value: 'never'}
+);
+```
+
+```{ojs}
+viewof showSynth = Inputs.toggle(
+  {label: html`<i>synth</i>`, values: ['never', 'none'], value: 'never'}
+);
+```
+
+```{ojs}
+//| output: false
+ctrlSpecDiD = stacked === 'no' | showDiD === 'none' ? 
+  showDiD : 'stacked ' + stacked;
+```
+
+```{ojs}
+//| output: false
+ctrlSpecSynth = stacked === 'no' | showSynth === 'none' ? 
+  showSynth : 'stacked ' + stacked;
+```
+
+::: {.sidebar-section-header}
+**Model Results**
+:::
+
+```{ojs}
+viewof modelResults = Inputs.toggle({label: 'SHOW RESULTS'});
+```
+
+```{ojs}
+viewof showCI = Inputs.toggle({label: 'show CI', value: true});
+```
+
+```{ojs}
+viewof modSpecDiD = Inputs.checkbox(
+  ['simult cband'], 
+  {label: html`<i>DiD options</i>`, value: ['simult cband']}
+);
+```
+
+::: {.sidebar-section-header}
+**States / Subgroups**
+:::
+
+```{ojs}
+viewof showSubgroups = Inputs.toggle({label: 'SHOW SUBGRPS'});
+```
+
+```{ojs}
+viewof subgroupsToShow = Inputs.checkbox(
+  ['treated', 'untreated', 'ctrl, DiD', 'ctrl, synth'], 
+  {value: ['treated', 'ctrl, synth', 'ctrl, DiD']}
+);
+```
+
+::: {.sidebar-section-header}
+**Overall**
+:::
+
+```{ojs}
+viewof dropAK = Inputs.toggle({label: 'exclude AK', value: true});
+```
+
+::: {.sidebar-section-header}
+**Appearance**
+:::
+
+```{ojs}
+viewof consistentAxes = Inputs.toggle({label: 'consistent axes', value: false});
+```
+
+```{ojs}
+viewof fe = Inputs.toggle({label: 'fixed effects', value: true});
+```
+
+```{ojs}
+viewof sortChrono = Inputs.toggle({label: 'sort states chrono'});
+```
+
+```{ojs}
+viewof synthCtrlMagnifier = Inputs.range(
+  [1, 3], {label: 'magnify SC states', step: 0.1, value: 1}
+);
+```
+
+::: {.content-hidden}
+# Dimensions
+:::
+
+```{ojs}
+//| output: false
+mutable ojsCellId = {
+  const ojsCell = document.querySelector(
+    'div.main .active [id*="ojs-cell-"]'
+  );
+  return ojsCell.id;
+};
+```
+
+```{ojs}
+//| output: false
+pageTab = document.querySelectorAll('.nav-link[role="tab"]')
+pageTab.forEach(el => {
+  el.addEventListener('click', function(event) {
+    const ojsCell = document.querySelector(
+      'div.main .active.show [id*="ojs-cell-"]'
+    );
+    mutable ojsCellId = ojsCell.id
+  });
+});
+```
+
+```{ojs}
+//| output: false
+expandButton = document.querySelectorAll('.bslib-full-screen-enter');
+expandButton.forEach(el => {
+  el.addEventListener('click', function(event) {
+    const parentEl = event.currentTarget.closest('[data-full-screen="true"]');
+    const ojsCell = parentEl.querySelector('[id*="ojs-cell-"]');
+    mutable ojsCellId = ojsCell.id;
+  });
+});
+expandButton.forEach(el => {
+  el.addEventListener('click', function(event) {
+    mutable full = true;
+  });
+});
+```
+
+```{ojs}
+//| output: false
+closeButtonParent = document.querySelector('div.main');
+closeButtonParent.addEventListener('click', function(event) {
+  if (
+    event.target.matches(
+      '.bslib-full-screen-exit, #bslib-full-screen-overlay, svg.bi.bi-x-lg, svg.bi.bi-x-lg path'
+    )
+  ) {
+    mutable full = false;
+  }
+})
+```
+
+```{ojs}
+//| output: false
+container = document.querySelector('#' + ojsCellId);
+dims = Generators.observe(notify => {
+  const observer = new ResizeObserver(entries => {
+    notify(entries[0].contentRect);
+  });
+  observer.observe(container.parentNode);
+  return () => observer.disconnect();
+});
+height = dims.height;
+mutable width = dims.width;
+mutable full = false;
+ht = full ? dims.height : Math.min(226, dims.width * .7);
+tickNumY = Math.max(height / 50, 2);
+tickNumX = Math.max(width / 75, 2);
+```
+
+```{ojs}
+//| output: false
+margin = {return {top: 20, right: 20, bottom: 30, left: 40};};
+```
+
+::: {.content-hidden}
+# Plot Functions
+
+## Trends
+:::
+
+```{ojs}
+//| output: false
+plotTrends = function(treatGroup) {
+  
+  // Variable Setup ============================================================
+
+  let treatYear = treatGroup;
+  if (treatGroup.length === 2) {
+    for (const [key, value] of treatGroupStatesMap.entries()) {
+      if (value.includes(treatGroup)) {
+        treatYear = key;
+      }
+    }
+  }
+  let stackedYr = null;
+  if (ctrlSpecDiD.includes('stacked')) {
+    stackedYr = Number(ctrlSpecDiD.match(/\d\d?/));
+  }
+
+  // Data Setup ================================================================
+
+  //// Means -------------------------------------------------------------------
+
+  let dataTreatMeanG = null;
+  if (treatGroup.length === 2) {
+    dataTreatMeanG = dataAllStatesUse.filter(d =>
+      treatGroup.includes(d.st) && d.treated === 1
+    );
+  } else {
+    dataTreatMeanG = dataTreatMeansUse.filter(d => 
+      treatGroup.includes(d.treat_group)
+    );
+  }
+  let dataCtrlMeanDiDG = dataCtrlMeansDiDUse.filter(d => 
+    treatYear.includes(d.treat_group)
+  );
+  if (
+    ctrlSpecDiD.includes('stacked') && Number(treatYear) + stackedYr - 1 > 2019
+  ) {
+    dataCtrlMeanDiDG = [{year: 1983, outcome: 0, treated: 0, st: 'blank'}];
+  }
+  const dataCtrlMeanSynthG = dataCtrlMeansSynthUse.filter(d => 
+    treatGroup.includes(d.treat_group)
+  );
+
+  //// States, filter by treat group -------------------------------------------
+
+  let dataAllStatesG = dataAllStatesUse.filter(d => 
+    treatYear.includes(d.treat_group)
+  );
+  if (treatGroup.length === 2) {
+    dataAllStatesG = dataAllStatesG.filter(d => 
+      d.treated === 0 || treatGroup.includes(d.st)
+    );
+  }
+  const dataCtrlStatesDiDG = dataCtrlStatesDiDUse.filter(d =>
+    treatYear.includes(d.treat_group)
+  );
+  const dataCtrlStatesSynthG = dataCtrlStatesSynthUse.filter(d => 
+    treatGroup.includes(d.treat_group) 
+  );
+
+  //// States, non-synth -------------------------------------------------------
+
+  let dataStatesMain = dataAllStatesG;
+  if (!subgroupsToShow.includes('treated')) {
+    dataStatesMain = dataStatesMain.filter(d => d.treated === 0);
+  }
+  if (!subgroupsToShow.includes('untreated')) {
+    if (subgroupsToShow.includes('ctrl, DiD') && ctrlSpecDiD !== 'none') {
+      const ctrlStates = dataCtrlStatesDiDG.map(d => d.ctrl_states)[0];
+      dataStatesMain = dataStatesMain.filter(d => 
+        !(d.treated === 0 && !ctrlStates.includes(d.st))
+      );
+      if (ctrlSpecDiD.includes('stacked')) {
+        dataStatesMain = dataStatesMain.filter(d =>
+          !(d.treated === 0 && d.year >= Number(treatYear) + stackedYr)
+        );
+      }
+      if (Number(treatYear) + stackedYr - 1 > 2019) {
+        dataStatesMain = dataStatesMain.filter(d => d.treated !== 0);
+      }
+    } else {
+      dataStatesMain = dataStatesMain.filter(d => d.treated !== 0);
+    }
+  }
+  if (!showSubgroups) dataStatesMain = [
+    {year: 1983, outcome: 0, treated: 0, st: 'blank'}
+  ];
+  if (showSubgroups && dataStatesMain.length === 0) dataStatesMain = [
+    {year: 1983, outcome: 0, treated: 0, st: 'blank'}
+  ];
+
+  //// States, synth -----------------------------------------------------------
+
+  const dataStatesSynth = dataAllStatesG.filter(d => 
+    dataCtrlStatesSynthG.map(d => d.st).includes(d.st)
+  );
+  const synthWtsMap = new Map(dataCtrlStatesSynthG.map(d => [d.st, d.weight]));
+  let dataStatesSynthWts = dataStatesSynth.map(d => ({
+    ...d, weight: synthWtsMap.get(d.st)
+  }));
+  if (!showSubgroups || !subgroupsToShow.includes('ctrl, synth')) {
+    dataStatesSynthWts = [{year: 1983, outcome: 0, st: 'blank', weight: 0}];
+  }
+
+  //// Overlay K-12 means ------------------------------------------------------
+
+  let dataK12MeansG = null;
+  if (overlayK12 && selectedOutcome !== 'e027_elem_educ_direct_exp') {
+    dataK12MeansG = dataK12Means.filter(d => 
+      treatGroup.includes(d.treat_group) || 
+        treatYear.includes(d.treat_group) && 
+        ['ctrl did', 'treat st', 'treat group'].includes(d.id)
+    );
+    if (treatGroup.length === 2) {
+      dataK12MeansG = dataK12MeansG.filter(d => 
+        d.id !== 'treat group' &&
+          !(!treatGroup.includes(d.st) && d.id === 'treat st')
+      );
+    } else {
+      dataK12MeansG = dataK12MeansG.filter(d => d.id !== 'treat st');
+    }
+    if (ctrlSpecDiD === 'none') {
+      dataK12MeansG = dataK12MeansG.filter(d => d.id !== 'ctrl did');
+    }
+    if (ctrlSpecSynth === 'none') {
+      dataK12MeansG = dataK12MeansG.filter(d => d.id !== 'ctrl synth');
+    }
+  }
+  
+  // Scale Functions ===========================================================
+
+  //// Find min & max y and x values -------------------------------------------
+
+  let maxX, minY, maxY, minYTreat, maxYTreat = null;
+
+  ////// Consistent axes -------------------------------------------------------
+
+  if (consistentAxes) {
+    maxX = d3.max(dataTreatMeansUse, d => d.year);
+    minYTreat = d3.min(dataTreatMeansUse, d => d.outcome);
+    maxYTreat = d3.max(dataTreatMeansUse, d => d.outcome);
+
+    //////// States shown ------------------------------------------------------
+
+    if (showSubgroups) {
+      minY = fe ? 
+        Math.min(d3.min(dataAllStatesUse, d => d.outcome), minYTreat) : 0;
+      maxY = Math.max(d3.max(dataAllStatesUse, d => d.outcome), maxYTreat);
+
+    //////// Means only --------------------------------------------------------
+
+    } else if (ctrlSpecDiD !== 'none' && ctrlSpecSynth !== 'none') {
+      if (fe) {
+        minY = Math.min(
+          d3.min(dataCtrlMeansDiDUse, d => d.outcome), 
+          d3.min(dataCtrlMeansSynthUse, d => d.outcome), 
+          minYTreat
+        );
+      } else {
+        minY = 0;
+      }
+      maxY = Math.max(
+        d3.max(dataCtrlMeansDiDUse, d => d.outcome), 
+        d3.max(dataCtrlMeansSynthUse, d => d.outcome), 
+        maxYTreat
+      );
+    } else if (ctrlSpecSynth === 'none') {
+      minY = fe ? 
+        Math.min(d3.min(dataCtrlMeansDiDUse, d => d.outcome), minYTreat) : 0;
+      maxY = Math.max(d3.max(dataCtrlMeansDiDUse, d => d.outcome), maxYTreat);
+    } else {
+      minY = fe ? 
+        Math.min(d3.min(dataCtrlMeansSynthUse, d => d.outcome), minYTreat) : 0;
+      maxY = Math.max(d3.max(dataCtrlMeansSynthUse, d => d.outcome), maxYTreat);
+    }
+  
+  ////// Varying axes ----------------------------------------------------------
+
+  } else {
+    maxX = d3.max(dataTreatMeanG, d => d.year);
+    minYTreat = d3.min(dataTreatMeanG, d => d.outcome);
+    maxYTreat = d3.max(dataTreatMeanG, d => d.outcome);
+
+    //////// States shown ------------------------------------------------------
+
+    if (showSubgroups) {
+      if (subgroupsToShow.includes('ctrl, synth') && ctrlSpecSynth !== 'none') {
+        if (fe) {
+          minY = Math.min(
+            d3.min(dataStatesMain, d => d.outcome), 
+            d3.min(dataStatesSynthWts, d => d.outcome), 
+            minYTreat
+          );
+        } else {
+          minY = 0;
+        }
+        maxY = Math.max(
+          d3.max(dataStatesMain, d => d.outcome), 
+          d3.max(dataStatesSynthWts, d => d.outcome), 
+          maxYTreat
+        );
+      } else if (ctrlSpecDiD !== 'none' && ctrlSpecSynth !== 'none') {
+        minY = fe ? 
+          Math.min(
+            d3.min(dataStatesMain, d => d.outcome),
+            d3.min(dataCtrlMeanDiDG, d => d.outcome),
+            d3.min(dataCtrlMeanSynthG, d => d.outcome),
+            minYTreat
+          ) : 0;
+        maxY = Math.max(
+          d3.max(dataStatesMain, d => d.outcome), 
+          d3.max(dataCtrlMeanDiDG, d => d.outcome),
+          d3.max(dataCtrlMeanSynthG, d => d.outcome),
+          maxYTreat
+        );
+      } else if (ctrlSpecDiD !== 'none' && ctrlSpecSynth === 'none') {
+        minY = fe ? 
+          Math.min(
+            d3.min(dataStatesMain, d => d.outcome),
+            d3.min(dataCtrlMeanDiDG, d => d.outcome),
+            minYTreat
+          ) : 0;
+        maxY = Math.max(
+          d3.max(dataStatesMain, d => d.outcome), 
+          d3.max(dataCtrlMeanDiDG, d => d.outcome),
+          maxYTreat
+        );
+      } else if (ctrlSpecDiD === 'none' && ctrlSpecSynth !== 'none') {
+        minY = fe ? 
+          Math.min(
+            d3.min(dataStatesMain, d => d.outcome),
+            d3.min(dataCtrlMeanSynthG, d => d.outcome),
+            minYTreat
+          ) : 0;
+        maxY = Math.max(
+          d3.max(dataStatesMain, d => d.outcome), 
+          d3.max(dataCtrlMeanSynthG, d => d.outcome),
+          maxYTreat
+        );
+      } else {
+        minY = fe ? 
+          Math.min(d3.min(dataStatesMain, d => d.outcome), minYTreat) : 0;
+        maxY = Math.max(d3.max(dataStatesMain, d => d.outcome), maxYTreat);
+      }
+
+    //////// Means only --------------------------------------------------------
+
+    } else if (ctrlSpecDiD !== 'none' && ctrlSpecSynth !== 'none') {
+      if (fe) {
+        minY = Math.min(
+          d3.min(dataCtrlMeanDiDG, d => d.outcome), 
+          d3.min(dataCtrlMeanSynthG, d => d.outcome), 
+          minYTreat
+        );
+      } else {
+        minY = 0;
+      }
+      maxY = Math.max(
+        d3.max(dataCtrlMeanDiDG, d => d.outcome), 
+        d3.max(dataCtrlMeanSynthG, d => d.outcome), 
+        maxYTreat
+      );
+    } else if (ctrlSpecDiD !== 'none' && ctrlSpecSynth === 'none') {
+      minY = fe ? 
+        Math.min(d3.min(dataCtrlMeanDiDG, d => d.outcome), minYTreat) : 0;
+      maxY = Math.max(d3.max(dataCtrlMeanDiDG, d => d.outcome), maxYTreat);
+    } else if (ctrlSpecDiD === 'none' && ctrlSpecSynth !== 'none') {
+      minY = fe ? 
+        Math.min(d3.min(dataCtrlMeanSynthG, d => d.outcome), minYTreat) : 0;
+      maxY = Math.max(d3.max(dataCtrlMeanSynthG, d => d.outcome), maxYTreat);
+    } else {
+      minY = fe ? minYTreat : 0;
+      maxY = maxYTreat;
+    }
+  }
+
+  //// If overlaying K-12 means
+  if (overlayK12 && selectedOutcome !== 'e027_elem_educ_direct_exp') {
+    minY = Math.min(minY, d3.min(dataK12MeansG, d => d.outcome));
+    maxY = Math.max(maxY, d3.max(dataK12MeansG, d => d.outcome));
+  }
+
+  //// Define scale functions --------------------------------------------------
+
+  const x = d3.scaleLinear()
+    .domain([1983, maxX])
+    .range([margin.left, width - margin.right]);
+  const y = d3.scaleLinear()
+    .domain([minY, maxY])
+    .range([ht - margin.bottom, margin.top])
+    .nice();
+  
+  // Parent SVG ================================================================
+
+  const svg = d3.create('svg')
+    .attr('width', width)
+    .attr('height', ht);
+  
+  // Axes ======================================================================
+
+  const xAxis = d3.axisBottom(x)
+    .ticks(tickNumX)
+    .tickFormat(d3.format('d'));
+  const yAxis = d3.axisLeft(y)
+    .ticks(tickNumY);
+
+  svg.append('g')
+    .attr('transform', `translate(0, ${ht - margin.bottom})`)
+    .call(xAxis)
+    .selectAll('.tick text')
+    .attr('font-size', '12px');
+  svg.append('g')
+    .attr('transform', `translate(${margin.left}, 0)`)
+    .call(yAxis)
+    .selectAll('.tick text')
+    .attr('font-size', '12px');
+  
+  // Treat Year Vertical Line ==================================================
+
+  svg.append('line')
+    .attr('stroke-width', 2)
+    .attr('stroke', 'black')
+    .attr('stroke-dasharray', 5)
+    .attr('x1', x(treatYear - 1))
+    .attr('x2', x(treatYear - 1))
+    .attr('y1', margin.top)
+    .attr('y2', ht - margin.bottom);
+  
+  // Outcome Trends ============================================================
+
+  const line = d3.line().defined(d => 
+    !isNaN(d[1]) & d[1] !== undefined & d[1] !== null
+  );
+  
+  //// State, non-synth --------------------------------------------------------
+
+  const pointsState = dataStatesMain.map(d => 
+    [x(d.year), y(d.outcome), d.st, d.treated]
+  );
+  const groupsState = d3.rollup(
+    pointsState, 
+    v => Object.assign(v, {state: v[0][2], treated: v[0][3]}), 
+    d => d[2]
+  );
+  const pathState = svg.append('g')
+    .attr('fill', 'none')
+    .attr('stroke-width', 2)
+    .attr('stroke-linejoin', 'round')
+    .attr('stroke-dasharray', 5)
+    .selectAll('path')
+    .data(groupsState.values())
+    .join('path')
+    .style('mix-blend-mode', 'multiply')
+    .attr('d', line)
+    .attr('stroke', ({treated}) => treated === 1 ? 'hotpink' : 'lightskyblue');
+
+  //// State, synth ------------------------------------------------------------
+
+  const pointsStateSynth = dataStatesSynthWts.map(d =>
+    [x(d.year), y(d.outcome), d.st, d.weight]
+  );
+  const groupsStateSynth = d3.rollup(
+    pointsStateSynth,
+    v => Object.assign(v, {state: v[0][2], weight: v[0][3]}),
+    d => d[2]
+  );
+  const pathStateSynth = svg.append('g')
+    .attr('fill', 'none')
+    .attr('stroke-linejoin', 'round')
+    .attr('stroke', 'lightgreen')
+    .selectAll('path')
+    .data(groupsStateSynth.values())
+    .join('path')
+    .style('mix-blend-mode', 'multiply')
+    .attr('stroke-width', ({weight}) => weight * 8 * synthCtrlMagnifier)
+    .attr('d', line);
+
+  //// Mean, treat -------------------------------------------------------------
+
+  const pointsTreatMean = dataTreatMeanG.map(d => 
+    [x(d.year), y(d.outcome), d.treat_group]
+  );
+  const groupsTreatMean = d3.group(pointsTreatMean, d => d[2]);
+  const pathTreatMean = svg.append('g')
+    .attr('fill', 'none')
+    .attr('stroke-width', 3.5)
+    .attr('stroke-linejoin', 'round')
+    .attr('stroke', 'deeppink')
+    .selectAll('path')
+    .data(groupsTreatMean.values())
+    .join('path')
+    .attr('d', line);
+
+  //// Mean, ctrl DiD ----------------------------------------------------------
+
+  const pointsCtrlMeanDiD = dataCtrlMeanDiDG.map(d => 
+    [x(d.year), y(d.outcome), d.treat_group]
+  );
+  const groupsCtrlMeanDiD = d3.group(pointsCtrlMeanDiD, d => d[2]);
+  const pathCtrlMeanDiD = svg.append('g')
+    .attr('fill', 'none')
+    .attr('stroke-width', 3.5)
+    .attr('stroke-linejoin', 'round')
+    .attr('stroke', 'deepskyblue')
+    .selectAll('path')
+    .data(groupsCtrlMeanDiD.values())
+    .join('path')
+    .attr('d', line);
+
+  //// Mean, ctrl synth --------------------------------------------------------
+
+  const pointsCtrlMeanSynth = dataCtrlMeanSynthG.map(d => 
+    [x(d.year), y(d.outcome), d.treat_group]
+  );
+  const groupsCtrlMeanSynth = d3.group(pointsCtrlMeanSynth, d => d[2]);
+  const pathCtrlMeanSynth = svg.append('g')
+    .attr('fill', 'none')
+    .attr('stroke-width', 3.5)
+    .attr('stroke-linejoin', 'round')
+    .attr('stroke', 'springgreen')
+    .selectAll('path')
+    .data(groupsCtrlMeanSynth.values())
+    .join('path')
+    .attr('d', line);
+  
+  //// K-12 means --------------------------------------------------------------
+  
+  if (overlayK12 && selectedOutcome !== 'e027_elem_educ_direct_exp') {
+    const pointsK12 = dataK12MeansG.map(d => [x(d.year), y(d.outcome), d.id]);
+    const groupsK12 = d3.rollup(
+      pointsK12, v => Object.assign(v, {id: v[0][2]}), d => d[2]
+    );
+    const pathK12 = svg.append('g')
+      .attr('fill', 'none')
+      .attr('stroke-width', 3.5)
+      .attr('stroke-linejoin', 'round')
+      .attr('stroke-opacity', .5)
+      .attr('stroke-dasharray', 5)
+      .selectAll('path')
+      .data(groupsK12.values())
+      .join('path')
+      .attr('d', line)
+      .attr('stroke', ({id}) => {
+        let out = null;
+        switch (id) {
+          case 'treat group':
+            out = 'deeppink';
+            break;
+          case 'treat st':
+            out = 'deeppink';
+            break;
+          case 'ctrl did':
+            out = 'deepskyblue';
+            break;
+          case 'ctrl synth':
+            out = 'springgreen';
+            break;
+        }
+        return out;
+      });
+  }
+  
+  // Tooltip (State Name) ======================================================
+
+  const tooltip = svg.append('text')  
+    .attr('display', 'none')
+    .attr('text-anchor', 'middle')
+    .attr('y', -8);
+  
+  // Title =====================================================================
+  
+  let stateNames = null;
+  if (treatGroup.length === 2) {
+    stateNames = treatGroup;
+  } else {
+    stateNames = treatGroupStatesMap.get(treatGroup).join(', ');
+  }
+  svg.append('text')
+    .attr('x', width / 2)
+    .attr('y', margin.top - 10)
+    .attr('text-anchor', 'middle')
+    .style('font-size', '12px')
+    .text(treatYear + ': ' + stateNames);
+
+  // Event Listeners ===========================================================
+
+  svg
+    .on('pointermove', pointerMoved)
+    .on('pointerleave', pointerLeft);
+  
+  return svg.node();
+
+  // Event Handler Functions ===================================================
+
+  //// Pointer moved -----------------------------------------------------------
+
+  function pointerMoved(event) {
+    const [xm, ym] = d3.pointer(event);
+    const allPoints = [...pointsState, ...pointsStateSynth];
+    const i = d3.leastIndex(allPoints, ([x, y]) => Math.hypot(x - xm, y - ym));
+    const [xHover, yHover, hoveredState] = allPoints[i];
+    
+    pathState
+      .style('stroke-width', ({state}) => state === hoveredState ? 7 : null)
+      .filter(({state}) => state === hoveredState)
+      .raise();
+    
+    pathStateSynth
+      .style('stroke', ({state}) => state === hoveredState ? 'black' : null)
+      .filter(({state}) => state === hoveredState)
+      .raise();
+    
+    if (showSubgroups & subgroupsToShow.length > 0) {
+      tooltip
+        .html(hoveredState)
+        .attr('transform', `translate(${xHover}, ${yHover})`)
+        .attr('display', null);
+    }
+  }
+
+  //// Pointer left ------------------------------------------------------------
+
+  function pointerLeft() {
+    pathState.style('stroke-width', null);
+    pathStateSynth.style('stroke', null);
+    tooltip.attr('display', 'none');
+  }
+}
+```
+
+::: {.content-hidden}
+## Model Results
+:::
+
+```{ojs}
+//| output: false
+plotResults = function(treatGroup) {
+
+  // Data Setup ================================================================
+  
+  //// Main --------------------------------------------------------------------
+
+  let dataResSynthG, dataResDiDG = null;
+  let treatYear = treatGroup;
+  if (treatGroup.length === 2) {
+    dataResSynthG = dataResSynthUseSt.filter(d => d.treat_group === treatGroup);
+    dataResDiDG = dataResDiDUseSt.filter(d => d.treat_group === treatGroup);
+    for (const [key, value] of treatGroupStatesMap.entries()) {
+      if (value.includes(treatGroup)) treatYear = key;
+    }
+  } else {
+    dataResSynthG = dataResSynthUseG.filter(d => d.treat_group === treatGroup);
+    dataResDiDG = dataResDiDUseG.filter(d => d.treat_group === treatGroup);
+  }
+
+  //// Overlay K-12 results ----------------------------------------------------
+
+  let dataResK12G = null;
+  if (overlayK12 && selectedOutcome !== 'e027_elem_educ_direct_exp') {
+    if (treatGroup.length === 2) {
+      dataResK12G = dataResK12UseSt.filter(d => d.treat_group === treatGroup);
+    } else {
+      dataResK12G = dataResK12UseG.filter(d => d.treat_group === treatGroup);
+    }
+    if (ctrlSpecDiD === 'none') {
+      dataResK12G = dataResK12G.filter(d => d.id !== 'did');
+    }
+    if (ctrlSpecSynth === 'none') {
+      dataResK12G = dataResK12G.filter(d => d.id !== 'synth');
+    }
+  }
+  
+  // Scale Functions ===========================================================
+
+  //// Find min & max y and x values
+
+  let minX, maxX, minY, maxY, minYVar, maxYVar = null;
+  if (showCI) {
+    minYVar = 'ci_low';
+    maxYVar = 'ci_up';
+  } else {
+    minYVar = 'att';
+    maxYVar = 'att';
+  }
+
+  ////// Consistent axes -------------------------------------------------------
+
+  if (consistentAxes) {
+    if (ctrlSpecDiD !== 'none' && ctrlSpecSynth !== 'none') {
+      if (treatGroup.length === 2) {
+        minX = Math.min(
+          d3.min(dataResSynthUseSt, d => d.year),
+          d3.min(dataResDiDUseSt, d => d.year)
+        );
+        maxX = Math.max(
+          d3.max(dataResSynthUseSt, d => d.year),
+          d3.max(dataResDiDUseSt, d => d.year)
+        );
+        minY = Math.min(
+          d3.min(dataResSynthUseSt, d => d[minYVar]),
+          d3.min(dataResDiDUseSt, d => d[minYVar])
+        );
+        maxY = Math.max(
+          d3.max(dataResSynthUseSt, d => d[maxYVar]),
+          d3.max(dataResDiDUseSt, d => d[maxYVar])
+        );
+      } else {
+        minX = Math.min(
+          d3.min(dataResSynthUseG, d => d.year),
+          d3.min(dataResDiDUseG, d => d.year)
+        );
+        maxX = Math.max(
+          d3.max(dataResSynthUseG, d => d.year),
+          d3.max(dataResDiDUseG, d => d.year)
+        );
+        minY = Math.min(
+          d3.min(dataResSynthUseG, d => d[minYVar]),
+          d3.min(dataResDiDUseG, d => d[minYVar])
+        );
+        maxY = Math.max(
+          d3.max(dataResSynthUseG, d => d[maxYVar]),
+          d3.max(dataResDiDUseG, d => d[maxYVar])
+        );
+      }
+    } else if (ctrlSpecDiD === 'none' && ctrlSpecSynth !== 'none') {
+      if (treatGroup.length === 2) {
+        minX = d3.min(dataResSynthUseSt, d => d.year);
+        maxX = d3.max(dataResSynthUseSt, d => d.year);
+        minY = d3.min(dataResSynthUseSt, d => d[minYVar]);
+        maxY = d3.max(dataResSynthUseSt, d => d[maxYVar]);
+      } else {
+        minX = d3.min(dataResSynthUseG, d => d.year);
+        maxX = d3.max(dataResSynthUseG, d => d.year);
+        minY = d3.min(dataResSynthUseG, d => d[minYVar]);
+        maxY = d3.max(dataResSynthUseG, d => d[maxYVar]);
+      }
+    } else if (ctrlSpecDiD !== 'none' && ctrlSpecSynth === 'none') {
+      if (treatGroup.length === 2) {
+        minX = d3.min(dataResDiDUseSt, d => d.year);
+        maxX = d3.max(dataResDiDUseSt, d => d.year);
+        minY = d3.min(dataResDiDUseSt, d => d[minYVar]);
+        maxY = d3.max(dataResDiDUseSt, d => d[maxYVar]);
+      } else {
+        minX = d3.min(dataResDiDUseG, d => d.year);
+        maxX = d3.max(dataResDiDUseG, d => d.year);
+        minY = d3.min(dataResDiDUseG, d => d[minYVar]);
+        maxY = d3.max(dataResDiDUseG, d => d[maxYVar]);
+      }
+    }
+
+    if (overlayK12 && selectedOutcome !== 'e027_elem_educ_direct_exp') {
+      if (ctrlSpecDiD !== 'none' && ctrlSpecSynth !== 'none') {
+        if (treatGroup.length === 2) {
+          minY = Math.min(minY, d3.min(dataResK12UseSt, d => d.att));
+          maxY = Math.max(maxY, d3.max(dataResK12UseSt, d => d.att));
+        } else {
+          minY = Math.min(minY, d3.min(dataResK12UseG, d => d.att));
+          maxY = Math.max(maxY, d3.max(dataResK12UseG, d => d.att));
+        }
+      } else if (ctrlSpecDiD === 'none' && ctrlSpecSynth !== 'none') {
+        if (treatGroup.length === 2) {
+          const k12Synth = dataResK12UseSt.filter(d => d.id === 'synth');
+          minY = Math.min(minY, d3.min(k12Synth, d => d.att));
+          maxY = Math.max(maxY, d3.max(k12Synth, d => d.att));
+        } else {
+          const k12Synth = dataResK12UseG.filter(d => d.id === 'synth');
+          minY = Math.min(minY, d3.min(k12Synth, d => d.att));
+          maxY = Math.max(maxY, d3.max(k12Synth, d => d.att));
+        }
+      } else if (ctrlSpecDiD !== 'none' && ctrlSpecSynth === 'none') {
+        if (treatGroup.length === 2) {
+          const k12DiD = dataResK12UseSt.filter(d => d.id === 'did');
+          minY = Math.min(minY, d3.min(k12DiD, d => d.att));
+          maxY = Math.max(maxY, d3.max(k12DiD, d => d.att));
+        } else {
+          const k12DiD = dataResK12UseG.filter(d => d.id === 'did');
+          minY = Math.min(minY, d3.min(k12DiD, d => d.att));
+          maxY = Math.max(maxY, d3.max(k12DiD, d => d.att));
+        }
+      }
+    }
+  
+  ////// Varying axes ----------------------------------------------------------
+
+  } else {
+    if (ctrlSpecDiD !== 'none' && ctrlSpecSynth !== 'none') {
+      minX = Math.min(
+        d3.min(dataResSynthG, d => d.year),
+        d3.min(dataResDiDG, d => d.year)
+      );
+      maxX = Math.max(
+        d3.max(dataResSynthG, d => d.year),
+        d3.max(dataResDiDG, d => d.year)
+      );
+      minY = Math.min(
+        d3.min(dataResSynthG, d => d[minYVar]),
+        d3.min(dataResDiDG, d => d[minYVar])
+      );
+      maxY = Math.max(
+        d3.max(dataResSynthG, d => d[maxYVar]),
+        d3.max(dataResDiDG, d => d[maxYVar])
+      );
+    } else if (ctrlSpecDiD === 'none' && ctrlSpecSynth !== 'none') {
+      minX = d3.min(dataResSynthG, d => d.year);
+      maxX = d3.max(dataResSynthG, d => d.year);
+      minY = d3.min(dataResSynthG, d => d[minYVar]);
+      maxY = d3.max(dataResSynthG, d => d[maxYVar]);
+    } else if (ctrlSpecDiD !== 'none' && ctrlSpecSynth === 'none') {
+      minX = d3.min(dataResDiDG, d => d.year);
+      maxX = d3.max(dataResDiDG, d => d.year);
+      minY = d3.min(dataResDiDG, d => d[minYVar]);
+      maxY = d3.max(dataResDiDG, d => d[maxYVar]);
+    }
+
+    if (overlayK12 && selectedOutcome !== 'e027_elem_educ_direct_exp') {
+      minY = Math.min(minY, d3.min(dataResK12G, d => d.att));
+      maxY = Math.max(maxY, d3.max(dataResK12G, d => d.att));
+    }
+  }
+
+  //// Define scale functions --------------------------------------------------
+
+  const x = d3.scaleLinear()
+    .domain([minX, maxX])
+    .range([margin.left, width - margin.right]);
+  const y = d3.scaleLinear()
+    .domain([minY, maxY])
+    .range([ht - margin.bottom, margin.top])
+    .nice();
+
+  // Parent SVG ================================================================
+
+  const svg = d3.create('svg')
+    .attr('width', width)
+    .attr('height', ht);
+
+  // Axes ======================================================================
+
+  const xAxis = d3.axisBottom(x)
+    .ticks(tickNumX)
+    .tickFormat(d3.format('d'));
+  const yAxis = d3.axisLeft(y)
+    .ticks(tickNumY);
+
+  svg.append('g')
+    .attr('transform', `translate(0, ${ht - margin.bottom})`)
+    .call(xAxis)
+    .selectAll('.tick text')
+    .attr('font-size', '12px');
+  svg.append('g')
+    .attr('transform', `translate(${margin.left}, 0)`)
+    .call(yAxis)
+    .selectAll('.tick text')
+    .attr('font-size', '12px');
+  
+  // Horizontal Line at y = 0 ==================================================
+
+  svg.append('line')
+    .attr('stroke-width', 2)
+    .attr('stroke', 'black')
+    .attr('x1', x(minX))
+    .attr('x2', x(maxX))
+    .attr('y1', y(0))
+    .attr('y2', y(0))
+
+  // Treat Year Vertical Line ==================================================
+
+  svg.append('line')
+    .attr('stroke-width', 2)
+    .attr('stroke', 'black')
+    .attr('stroke-dasharray', 5)
+    .attr('x1', x(treatYear - 1))
+    .attr('x2', x(treatYear - 1))
+    .attr('y1', margin.top)
+    .attr('y2', ht - margin.bottom);
+
+  // Results Lines =============================================================
+
+  const line = d3.line()
+    .defined(d => !isNaN(d[1]) & d[1] !== undefined & d[1] !== null);
+  
+  let ci = null;
+  if (showCI) {
+    ci = d3.area()
+      .defined(d => !isNaN(d[1]) & d[1] !== undefined & d[1] !== null)
+      .x(d => d[0])
+      .y0(d => d[4])
+      .y1(d => d[3])
+  }
+
+  //// Synth -------------------------------------------------------------------
+
+  const pointsSynth = dataResSynthG.map(d => 
+    [x(d.year), y(d.att), d.treat_group, y(d.ci_low), y(d.ci_up)]
+  );
+  const groupsSynth = d3.group(pointsSynth, d => d[2]);
+
+  ////// Confidence interval ---------------------------------------------------
+
+  if (showCI) {
+    svg.append('g')
+      .attr('fill', 'springgreen')
+      .attr('opacity', 0.25)
+      .attr('stroke', 'none')
+      .selectAll('path')
+      .data(groupsSynth.values())
+      .join('path')
+      .attr('d', ci);
+  }
+  
+  ////// ATT -------------------------------------------------------------------
+
+  const pathSynth = svg.append('g')
+    .attr('fill', 'none')
+    .attr('stroke-width', 3.5)
+    .attr('stroke-linejoin', 'round')
+    .attr('stroke', 'springgreen')
+    .selectAll('path')
+    .data(groupsSynth.values())
+    .join('path')
+    .attr('d', line);
+  
+  //// DiD ---------------------------------------------------------------------
+
+  const pointsDiD = dataResDiDG.map(d => 
+    [x(d.year), y(d.att), d.treat_group, y(d.ci_low), y(d.ci_up)]
+  );
+  const groupsDiD = d3.group(pointsDiD, d => d[2]);
+
+  ////// Confidence interval ---------------------------------------------------
+
+  if (showCI) {
+    svg.append('g')
+      .attr('fill', 'deepskyblue')
+      .attr('opacity', 0.25)
+      .attr('stroke', 'none')
+      .selectAll('path')
+      .data(groupsDiD.values())
+      .join('path')
+      .attr('d', ci);
+  }
+  
+  ////// ATT -------------------------------------------------------------------
+
+  const pathDiD = svg.append('g')
+    .attr('fill', 'none')
+    .attr('stroke-width', 3.5)
+    .attr('stroke-linejoin', 'round')
+    .attr('stroke', 'deepskyblue')
+    .selectAll('path')
+    .data(groupsDiD.values())
+    .join('path')
+    .attr('d', line);
+  
+  //// K-12 results ------------------------------------------------------------
+
+  if (overlayK12 && selectedOutcome !== 'e027_elem_educ_direct_exp') {
+    const pointsK12 = dataResK12G.map(d => [x(d.year), y(d.att), d.id]);
+    const groupsK12 = d3.rollup(
+      pointsK12, v => Object.assign(v, {id: v[0][2]}), d => d[2]
+    );
+    const pathK12 = svg.append('g')
+      .attr('fill', 'none')
+      .attr('stroke-width', 3.5)
+      .attr('stroke-linejoin', 'round')
+      .attr('stroke-opacity', .75)
+      .attr('stroke-dasharray', 5)
+      .selectAll('path')
+      .data(groupsK12.values())
+      .join('path')
+      .attr('d', line)
+      .attr('stroke', ({id}) => id === 'synth' ? 'springgreen' : 'deepskyblue');
+  }
+
+  // Title =====================================================================
+  
+  let stateNames = null;
+  if (treatGroup.length === 2) {
+    stateNames = treatGroup;
+  } else {
+    stateNames = treatGroupStatesMap.get(treatGroup).join(', ');
+  }
+  svg.append('text')
+    .attr('x', width / 2)
+    .attr('y', margin.top - 10)
+    .attr('text-anchor', 'middle')
+    .style('font-size', '12px')
+    .text(treatYear + ': ' + stateNames);
+
+  return svg.node();
+}
+```
+
+::: {.content-hidden}
+## Agg Trends
+:::
+
+```{ojs}
+//| output: false
+plotAggTrends = function(aggType) {
+
+  // Data Setup ================================================================
+
+  const aggX = /^es?$|event/.test(aggType) ? 'e' : 'year';
+  let aggCol = null;
+  if (dropAK && stacked !== 'no') {
+    aggCol = new RegExp('aggregate no ak( stacked ' + Number(stacked) + ')?$');
+  } else if (!dropAK && stacked !== 'no') {
+    aggCol = new RegExp('aggregate( stacked ' + Number(stacked) + ')?$');
+  } else if (dropAK && stacked === 'no') {
+    aggCol = new RegExp('aggregate no ak( not stacked)?$');
+  } else {
+    aggCol = new RegExp('aggregate( not stacked)?$');
+  }
+  
+  //// Main --------------------------------------------------------------------
+
+  // Means
+  const dataTreatAgg = dataTreatMeansUse.filter(d =>
+    aggCol.test(d.treat_group) && d[aggX] !== null
+  );
+  const dataCtrlDiDAgg = dataCtrlMeansDiDUse.filter(d =>
+    aggCol.test(d.treat_group) && d[aggX] !== null
+  );
+  const dataCtrlSynthAgg = dataCtrlMeansSynthUse.filter(d =>
+    aggCol.test(d.treat_group) && d[aggX] !== null
+  );
+  // Subgroups
+  let dataTreat = dataAllStatesUse.filter(d => d.treated === 1);
+  let dataCtrlDiD = dataCtrlMeansDiDUse.filter(d => 
+    !d.treat_group.includes('aggregate')
+  );
+  let dataCtrlSynth = dataCtrlMeansSynthUse.filter(d => 
+    !d.treat_group.includes('aggregate') && /[A-Z][A-Z]/.test(d.treat_group)
+  );
+  if (!/^es?$|event/.test(aggType)) {
+    dataTreat = dataTreat.filter(d => d.e >= 0);
+    dataCtrlDiD = dataCtrlDiD.filter(d => d.e >= 0);
+    dataCtrlSynth = dataCtrlSynth.filter(d => d.e >= 0);
+  }
+  if (stacked !== 'no') {
+    dataTreat = dataTreat.filter(d => 
+      Number(d.treat_group) + Number(stacked) - 1 <= 2019
+    );
+  }
+  if (dropAK) {
+    dataTreat = dataTreat.filter(d => d.st !== 'AK');
+    dataCtrlSynth = dataCtrlSynth.filter(d => d.treat_group !== 'AK');
+  }
+  
+  //// Overlay K-12 results ----------------------------------------------------
+  
+  let dataK12 = null;
+  if (overlayK12 && selectedOutcome !== 'e027_elem_educ_direct_exp') {
+    dataK12 = dataK12Means.filter(d =>
+      aggCol.test(d.treat_group)
+        && d[aggX] !== null
+    );
+    if (ctrlSpecDiD === 'none') {
+      dataK12 = dataK12.filter(d => d.id !== 'ctrl did');
+    }
+    if (ctrlSpecSynth === 'none') {
+      dataK12 = dataK12.filter(d => d.id !== 'ctrl synth');
+    }
+  }
+
+  // Scale Functions ===========================================================
+
+  //// Find min & max y and x values -------------------------------------------
+
+  let minX, maxX, minY, maxY = null;
+
+  if (/^es?$|event/.test(aggType)) {
+    minX = d3.min(dataTreatAgg, d => d.e);
+    maxX = d3.max(dataTreatAgg, d => d.e);
+  } else {
+    minX = d3.min(dataTreatAgg, d => d.year);
+    maxX = d3.max(dataTreatAgg, d => d.year);
+  }
+  
+  ////// Means -----------------------------------------------------------------
+
+  minY = d3.min(dataTreatAgg, d => d.outcome);
+  maxY = d3.max(dataTreatAgg, d => d.outcome);
+  
+  if (ctrlSpecDiD !== 'none' && ctrlSpecSynth !== 'none') {
+    minY = Math.min(
+      d3.min(dataCtrlDiDAgg, d => d.outcome),
+      d3.min(dataCtrlSynthAgg, d => d.outcome),
+      minY
+    );
+    maxY = Math.max(
+      d3.max(dataCtrlDiDAgg, d => d.outcome),
+      d3.max(dataCtrlSynthAgg, d => d.outcome),
+      maxY
+    );
+  } else if (ctrlSpecDiD === 'none' && ctrlSpecSynth !== 'none') {
+    minY = Math.min(d3.min(dataCtrlSynthAgg, d => d.outcome), minY);
+    maxY = Math.max(d3.max(dataCtrlSynthAgg, d => d.outcome), maxY);
+  } else if (ctrlSpecDiD !== 'none' && ctrlSpecSynth === 'none') {
+    minY = Math.min(d3.min(dataCtrlDiDAgg, d => d.outcome), minY);
+    maxY = Math.max(d3.max(dataCtrlDiDAgg, d => d.outcome), maxY);
+  }
+  
+  ////// States / subgroup controls --------------------------------------------
+  
+  if (showSubgroups) {
+    if (subgroupsToShow.includes('treated')) {
+      minY = Math.min(d3.min(dataTreat, d => d.outcome), minY);
+      maxY = Math.max(d3.max(dataTreat, d => d.outcome), maxY);
+    }
+    if (
+      (subgroupsToShow.includes('ctrl, DiD') 
+        || subgroupsToShow.includes('untreated'))
+        && ctrlSpecDiD !== 'none'
+    ) {
+      minY = Math.min(d3.min(dataCtrlDiD, d => d.outcome), minY);
+      maxY = Math.max(d3.max(dataCtrlDiD, d => d.outcome), maxY);
+    }
+    if (
+      (subgroupsToShow.includes('ctrl, synth') 
+        || subgroupsToShow.includes('untreated'))
+        && ctrlSpecSynth !== 'none'
+    ) {
+      minY = Math.min(d3.min(dataCtrlSynth, d => d.outcome), minY);
+      maxY = Math.max(d3.max(dataCtrlSynth, d => d.outcome), maxY);
+    }
+  }
+
+  if (overlayK12 && selectedOutcome !== 'e027_elem_educ_direct_exp') {
+    minY = Math.min(d3.min(dataK12, d => d.outcome), minY);
+    maxY = Math.max(d3.max(dataK12, d => d.outcome), maxY);
+  }
+
+  if (!fe) minY = 0;
+
+  //// Define scale functions --------------------------------------------------
+
+  const x = d3.scaleLinear()
+    .domain([minX, maxX])
+    .range([margin.left, width - margin.right]);
+  const y = d3.scaleLinear()
+    .domain([minY, maxY])
+    .range([height - margin.bottom, margin.top])
+    .nice();
+
+  // Parent SVG ================================================================
+
+  const svg = d3.create('svg')
+    .attr('width', width)
+    .attr('height', height);
+
+  // Axes ======================================================================
+
+  const xAxis = d3.axisBottom(x)
+    .ticks(tickNumX)
+    .tickFormat(d3.format('d'));
+  const yAxis = d3.axisLeft(y)
+    .ticks(tickNumY);
+
+  svg.append('g')
+    .attr('transform', `translate(0, ${height - margin.bottom})`)
+    .call(xAxis)
+    .selectAll('.tick text')
+    .attr('font-size', '12px');
+  svg.append('g')
+    .attr('transform', `translate(${margin.left}, 0)`)
+    .call(yAxis)
+    .selectAll('.tick text')
+    .attr('font-size', '12px');
+  
+  // Treat Year Vertical Line ==================================================
+
+  if (/^es?$|event/.test(aggType)) {
+    svg.append('line')
+      .attr('stroke-width', 2)
+      .attr('stroke', 'black')
+      .attr('stroke-dasharray', 5)
+      .attr('x1', x(-1))
+      .attr('x2', x(-1))
+      .attr('y1', margin.top)
+      .attr('y2', height - margin.bottom);
+  }
+
+  // Outcome Trends ============================================================
+
+  const line = d3.line().defined(d => 
+    !isNaN(d[1]) & d[1] !== undefined & d[1] !== null
+  );
+
+  //// Subgroups 1: Treated states ---------------------------------------------
+
+  let pointsTreat = [[x(minX), y(minY), '']];
+  if (showSubgroups && subgroupsToShow.includes('treated')) {
+    pointsTreat = dataTreat.map(d => [x(d[aggX]), y(d.outcome), d.st + 'treat']);
+  }
+  const groupsTreat = d3.rollup(
+    pointsTreat, 
+    v => Object.assign(v, {group: v[0][2]}), 
+    d => d[2]
+  );
+  const pathTreat = svg.append('g')
+    .attr('fill', 'none')
+    .attr('stroke-width', 2)
+    .attr('stroke-linejoin', 'round')
+    .attr('stroke-dasharray', 5)
+    .attr('stroke', 'hotpink')
+    .selectAll('path')
+    .data(groupsTreat.values())
+    .join('path')
+    .style('mix-blend-mode', 'multiply')
+    .attr('d', line);
+  
+  //// Subgroups 2: Ctrl, DiD --------------------------------------------------
+
+  let pointsCtrlDiD = [[x(minX), y(minY), '']];
+  if (
+    showSubgroups 
+      && (subgroupsToShow.includes('untreated') 
+      || subgroupsToShow.includes('ctrl, DiD'))
+  ) {
+    pointsCtrlDiD = dataCtrlDiD.map(d => 
+      [x(d[aggX]), y(d.outcome), d.treat_group + 'did']
+    );
+  }
+  const groupsCtrlDiD = d3.rollup(
+    pointsCtrlDiD, 
+    v => Object.assign(v, {group: v[0][2]}), 
+    d => d[2]
+  );
+  const pathCtrlDiD = svg.append('g')
+    .attr('fill', 'none')
+    .attr('stroke-width', 2)
+    .attr('stroke-linejoin', 'round')
+    .attr('stroke-dasharray', 5)
+    .attr('stroke', 'lightskyblue')
+    .selectAll('path')
+    .data(groupsCtrlDiD.values())
+    .join('path')
+    .style('mix-blend-mode', 'multiply')
+    .attr('d', line);
+  
+  //// Subgroups 3: Ctrl, Synth ------------------------------------------------
+
+  let pointsCtrlSynth = [[x(minX), y(minY), '']];
+  if (
+    showSubgroups 
+      && (subgroupsToShow.includes('untreated') 
+      || subgroupsToShow.includes('ctrl, synth'))
+  ) {
+    pointsCtrlSynth = dataCtrlSynth.map(d => 
+      [x(d[aggX]), y(d.outcome), d.treat_group + 'synth']
+    );
+  }
+  const groupsCtrlSynth = d3.rollup(
+    pointsCtrlSynth, 
+    v => Object.assign(v, {group: v[0][2]}), 
+    d => d[2]
+  );
+  const pathCtrlSynth = svg.append('g')
+    .attr('fill', 'none')
+    .attr('stroke-width', 2)
+    .attr('stroke-linejoin', 'round')
+    .attr('stroke-dasharray', 5)
+    .attr('stroke', 'lightgreen')
+    .selectAll('path')
+    .data(groupsCtrlSynth.values())
+    .join('path')
+    .style('mix-blend-mode', 'multiply')
+    .attr('d', line);
+  
+  //// Agg: Treat --------------------------------------------------------------
+
+  const pointsTreatAgg = dataTreatAgg.map(d =>
+    [x(d[aggX]), y(d.outcome), d.treat_group]
+  );
+  const groupsTreatAgg = d3.group(pointsTreatAgg, d => d[2]);
+  const pathTreatAgg = svg.append('g')
+    .attr('fill', 'none')
+    .attr('stroke-width', 3.5)
+    .attr('stroke-linejoin', 'round')
+    .attr('stroke', 'deeppink')
+    .selectAll('path')
+    .data(groupsTreatAgg.values())
+    .join('path')
+    .attr('d', line);
+  
+  //// Agg: Ctrl, DiD ----------------------------------------------------------
+
+  const pointsCtrlDiDAgg = dataCtrlDiDAgg.map(d =>
+    [x(d[aggX]), y(d.outcome), d.treat_group]
+  );
+  const groupsCtrlDiDAgg = d3.group(pointsCtrlDiDAgg, d => d[2]);
+  const pathCtrlDiDAgg = svg.append('g')
+    .attr('fill', 'none')
+    .attr('stroke-width', 3.5)
+    .attr('stroke-linejoin', 'round')
+    .attr('stroke', 'deepskyblue')
+    .selectAll('path')
+    .data(groupsCtrlDiDAgg.values())
+    .join('path')
+    .attr('d', line);
+  
+  //// Agg: Ctrl, Synth ----------------------------------------------------------
+
+  const pointsCtrlSynthAgg = dataCtrlSynthAgg.map(d =>
+    [x(d[aggX]), y(d.outcome), d.treat_group]
+  );
+  const groupsCtrlSynthAgg = d3.group(pointsCtrlSynthAgg, d => d[2]);
+  const pathCtrlSynthAgg = svg.append('g')
+    .attr('fill', 'none')
+    .attr('stroke-width', 3.5)
+    .attr('stroke-linejoin', 'round')
+    .attr('stroke', 'springgreen')
+    .selectAll('path')
+    .data(groupsCtrlSynthAgg.values())
+    .join('path')
+    .attr('d', line);
+  
+  //// K-12 Overlay ------------------------------------------------------------
+
+  if (overlayK12 && selectedOutcome !== 'e027_elem_educ_direct_exp') {
+    const pointsK12 = dataK12.map(d => [x(d[aggX]), y(d.outcome), d.id]);
+    const groupsK12 = d3.rollup(
+      pointsK12, v => Object.assign(v, {id: v[0][2]}), d => d[2]
+    );
+    const pathK12 = svg.append('g')
+      .attr('fill', 'none')
+      .attr('stroke-width', 3.5)
+      .attr('stroke-linejoin', 'round')
+      .attr('stroke-opacity', .5)
+      .attr('stroke-dasharray', 5)
+      .selectAll('path')
+      .data(groupsK12.values())
+      .join('path')
+      .attr('d', line)
+      .attr('stroke', ({id}) => {
+        let out = null;
+        switch (id) {
+          case 'treat group':
+            out = 'deeppink';
+            break;
+          case 'ctrl did':
+            out = 'deepskyblue';
+            break;
+          case 'ctrl synth':
+            out = 'springgreen';
+            break;
+        }
+        return out;
+      });
+  }
+  
+  // Tooltip ===================================================================
+
+  const tooltip = svg.append('text')  
+    .attr('display', 'none')
+    .attr('text-anchor', 'middle')
+    .attr('y', -8);
+  
+  // Title =====================================================================
+
+  const title = /^es?$|event/.test(aggType) ? 
+    'Event Study' : 'Post-Treatment Trends';
+  svg.append('text')
+    .attr('x', width / 2)
+    .attr('y', margin.top - 2)
+    .attr('text-anchor', 'middle')
+    .style('font-size', '14px')
+    .text(title);
+  
+  // Event Listeners ===========================================================
+
+  svg
+    .on('pointermove', pointerMoved)
+    .on('pointerleave', pointerLeft);
+  
+  return svg.node();
+
+  // Event Handler Functions ===================================================
+
+  //// Pointer moved -----------------------------------------------------------
+
+  function pointerMoved(event) {
+    const [xm, ym] = d3.pointer(event);
+    const allPoints = [...pointsTreat, ...pointsCtrlDiD, ...pointsCtrlSynth];
+    const i = d3.leastIndex(allPoints, ([x, y]) => Math.hypot(x - xm, y - ym));
+    const [xHover, yHover, hoveredGroup] = allPoints[i];
+    
+    pathTreat
+      .style('stroke-width', ({group}) => group === hoveredGroup ? 7 : null)
+      .filter(({group}) => group === hoveredGroup)
+      .raise();
+    
+    pathCtrlDiD
+      .style('stroke-width', ({group}) => group === hoveredGroup ? 7 : null)
+      .filter(({group}) => group === hoveredGroup)
+      .raise();
+    
+    pathCtrlSynth
+      .style('stroke-width', ({group}) => group === hoveredGroup ? 7 : null)
+      .filter(({group}) => group === hoveredGroup)
+      .raise();
+    
+    if (showSubgroups & subgroupsToShow.length > 0) {
+      tooltip
+        .html(hoveredGroup.replace(/treat|did|synth/, ''))
+        .attr('transform', `translate(${xHover}, ${yHover})`)
+        .attr('display', null);
+    }
+  }
+
+  //// Pointer left ------------------------------------------------------------
+
+  function pointerLeft() {
+    pathTreat.style('stroke-width', null);
+    pathCtrlDiD.style('stroke-width', null);
+    pathCtrlSynth.style('stroke-width', null);
+    tooltip.attr('display', 'none');
+  }
+}
+```
+
+::: {.content-hidden}
+## Agg Model Results
+:::
+
+```{ojs}
+//| output: false
+plotAggResults = function(aggType) {
+
+  // Data Setup ================================================================
+
+  const aggX = /^es?$|event/.test(aggType) ? 'e' : 'year';
+  const aggCol = dropAK ? /aggregate.+no ak/ : /aggregate(?!.+no ak)/;
+
+  // Main
+  const resDiD = dataResDiDUseG.filter(d =>
+    aggCol.test(d.treat_group) && d[aggX] !== null
+  );
+  const resSynth = dataResSynthUseSt.filter(d =>
+    aggCol.test(d.treat_group) && d[aggX] !== null
+  );
+
+  // K12
+  let resK12, resK12Synth, resK12DiD = null;
+  if (overlayK12 && selectedOutcome !== 'e027_elem_educ_direct_exp') {
+    if (ctrlSpecDiD !== 'none' && ctrlSpecSynth !== 'none') {
+      resK12DiD = dataResK12UseG.filter(d =>
+        aggCol.test(d.treat_group) && d[aggX] !== null && d.id === 'did'
+      );
+      resK12Synth = dataResK12UseSt.filter(d =>
+        aggCol.test(d.treat_group) && d[aggX] !== null && d.id === 'synth'
+      );
+      resK12 = [...resK12DiD, ...resK12Synth];
+    } else if (ctrlSpecDiD !== 'none' && ctrlSpecSynth === 'none') {
+      resK12 = dataResK12UseG.filter(d =>
+        aggCol.test(d.treat_group) && d[aggX] !== null && d.id === 'did'
+      );
+    } else if (ctrlSpecDiD === 'none' && ctrlSpecSynth !== 'none') {
+      resK12 = dataResK12UseSt.filter(d =>
+        aggCol.test(d.treat_group) && d[aggX] !== null && d.id === 'synth'
+      );
+    }
+  }
+
+  // Scale Functions ===========================================================
+
+  //// Find min & max y and x values
+
+  let minX, maxX, minY, maxY, minYVar, maxYVar = null;
+  if (showCI) {
+    minYVar = 'ci_low';
+    maxYVar = 'ci_up';
+  } else {
+    minYVar = 'att';
+    maxYVar = 'att';
+  }
+  if (ctrlSpecDiD !== 'none' && ctrlSpecSynth !== 'none') {
+    minX = Math.min(d3.min(resSynth, d => d[aggX]), d3.min(resDiD, d => d[aggX]));
+    maxX = Math.max(d3.max(resSynth, d => d[aggX]), d3.max(resDiD, d => d[aggX]));
+    minY = Math.min(
+      d3.min(resSynth, d => d[minYVar]),
+      d3.min(resDiD, d => d[minYVar])
+    );
+    maxY = Math.max(
+      d3.max(resSynth, d => d[maxYVar]),
+      d3.max(resDiD, d => d[maxYVar])
+    );
+  } else if (ctrlSpecDiD === 'none' && ctrlSpecSynth !== 'none') {
+    minX = d3.min(resSynth, d => d[aggX]);
+    maxX = d3.max(resSynth, d => d[aggX]);
+    minY = d3.min(resSynth, d => d[minYVar]);
+    maxY = d3.max(resSynth, d => d[maxYVar]);
+  } else if (ctrlSpecDiD !== 'none' && ctrlSpecSynth === 'none') {
+    minX = d3.min(resDiD, d => d[aggX]);
+    maxX = d3.max(resDiD, d => d[aggX]);
+    minY = d3.min(resDiD, d => d[minYVar]);
+    maxY = d3.max(resDiD, d => d[maxYVar]);
+  }
+
+  if (
+    overlayK12 && selectedOutcome !== 'e027_elem_educ_direct_exp'
+      && !(ctrlSpecDiD === 'none' && ctrlSpecSynth === 'none')
+  ) {
+    minY = Math.min(minY, d3.min(resK12, d => d.att));
+    maxY = Math.max(maxY, d3.max(resK12, d => d.att));
+  }
+
+  //// Define scale functions --------------------------------------------------
+
+  const x = d3.scaleLinear()
+    .domain([minX, maxX])
+    .range([margin.left, width - margin.right]);
+  const y = d3.scaleLinear()
+    .domain([minY, maxY])
+    .range([height - margin.bottom, margin.top])
+    .nice();
+  
+  // Parent SVG ================================================================
+
+  const svg = d3.create('svg')
+    .attr('width', width)
+    .attr('height', height);
+
+  // Axes ======================================================================
+
+  const xAxis = d3.axisBottom(x)
+    .ticks(tickNumX)
+    .tickFormat(d3.format('d'));
+  const yAxis = d3.axisLeft(y)
+    .ticks(tickNumY);
+
+  svg.append('g')
+    .attr('transform', `translate(0, ${height - margin.bottom})`)
+    .call(xAxis)
+    .selectAll('.tick text')
+    .attr('font-size', '12px');
+  svg.append('g')
+    .attr('transform', `translate(${margin.left}, 0)`)
+    .call(yAxis)
+    .selectAll('.tick text')
+    .attr('font-size', '12px');
+  
+  // Horizontal Line at y = 0 ==================================================
+
+  svg.append('line')
+    .attr('stroke-width', 2)
+    .attr('stroke', 'black')
+    .attr('x1', x(minX))
+    .attr('x2', x(maxX))
+    .attr('y1', y(0))
+    .attr('y2', y(0))
+  
+  // Treat Year Vertical Line ==================================================
+
+  if (/^es?$|event/.test(aggType)) {
+    svg.append('line')
+      .attr('stroke-width', 2)
+      .attr('stroke', 'black')
+      .attr('stroke-dasharray', 5)
+      .attr('x1', x(-1))
+      .attr('x2', x(-1))
+      .attr('y1', margin.top)
+      .attr('y2', height - margin.bottom);
+  }
+
+  // Results Lines =============================================================
+
+  const line = d3.line()
+    .defined(d => !isNaN(d[1]) & d[1] !== undefined & d[1] !== null);
+  
+  let ci = null;
+  if (showCI) {
+    ci = d3.area()
+      .defined(d => !isNaN(d[1]) & d[1] !== undefined & d[1] !== null)
+      .x(d => d[0])
+      .y0(d => d[4])
+      .y1(d => d[3])
+  }
+
+  //// Synth -------------------------------------------------------------------
+
+  const pointsSynth = resSynth.map(d => 
+    [x(d[aggX]), y(d.att), d.treat_group, y(d.ci_low), y(d.ci_up)]
+  );
+  const groupsSynth = d3.group(pointsSynth, d => d[2]);
+
+  // Confidence interval
+  if (showCI) {
+    svg.append('g')
+      .attr('fill', 'springgreen')
+      .attr('opacity', 0.25)
+      .attr('stroke', 'none')
+      .selectAll('path')
+      .data(groupsSynth.values())
+      .join('path')
+      .attr('d', ci);
+  }
+
+  // ATT
+  svg.append('g')
+    .attr('fill', 'none')
+    .attr('stroke-width', 3.5)
+    .attr('stroke-linejoin', 'round')
+    .attr('stroke', 'springgreen')
+    .selectAll('path')
+    .data(groupsSynth.values())
+    .join('path')
+    .attr('d', line);
+  
+  //// DiD ---------------------------------------------------------------------
+
+  const pointsDiD = resDiD.map(d => 
+    [x(d[aggX]), y(d.att), d.treat_group, y(d.ci_low), y(d.ci_up)]
+  );
+  const groupsDiD = d3.group(pointsDiD, d => d[2]);
+
+  // Confidence interval
+  if (showCI) {
+    svg.append('g')
+      .attr('fill', 'deepskyblue')
+      .attr('opacity', 0.25)
+      .attr('stroke', 'none')
+      .selectAll('path')
+      .data(groupsDiD.values())
+      .join('path')
+      .attr('d', ci);
+  }
+  
+  // ATT
+  svg.append('g')
+    .attr('fill', 'none')
+    .attr('stroke-width', 3.5)
+    .attr('stroke-linejoin', 'round')
+    .attr('stroke', 'deepskyblue')
+    .selectAll('path')
+    .data(groupsDiD.values())
+    .join('path')
+    .attr('d', line);
+
+  //// K-12 --------------------------------------------------------------------
+
+  if (
+    overlayK12 && selectedOutcome !== 'e027_elem_educ_direct_exp'
+      && !(ctrlSpecDiD === 'none' && ctrlSpecSynth === 'none')
+  ) {
+    const pointsK12 = resK12.map(d => [x(d[aggX]), y(d.att), d.id]);
+    const groupsK12 = d3.rollup(
+      pointsK12, v => Object.assign(v, {id: v[0][2]}), d => d[2]
+    );
+    const pathK12 = svg.append('g')
+      .attr('fill', 'none')
+      .attr('stroke-width', 3.5)
+      .attr('stroke-linejoin', 'round')
+      .attr('stroke-opacity', .75)
+      .attr('stroke-dasharray', 5)
+      .selectAll('path')
+      .data(groupsK12.values())
+      .join('path')
+      .attr('d', line)
+      .attr('stroke', ({id}) => id === 'synth' ? 'springgreen' : 'deepskyblue');
+  }
+  
+  // Title =====================================================================
+
+  const title = /^es?$|event/.test(aggType) ? 
+    'Event Study' : 'Effects by Year';
+  svg.append('text')
+    .attr('x', width / 2)
+    .attr('y', margin.top - 2)
+    .attr('text-anchor', 'middle')
+    .style('font-size', '14px')
+    .text(title);
+
+  return svg.node();
+}
+```
+
+# Overall
+
+```{ojs}
+modelResults ? plotAggResults('e') : plotAggTrends('e');
+```
+
+```{ojs}
+modelResults ? plotAggResults('cal') : plotAggTrends('cal');
+```
+
+# Treatment Timing Groups {scrolling="true"}
+
+## Row 1
+
+```{ojs}
+modelResults ? plotResults(treatGroupIds[0]) : plotTrends(treatGroupIds[0]);
+```
+
+```{ojs}
+modelResults ? plotResults(treatGroupIds[1]) : plotTrends(treatGroupIds[1]);
+```
+
+```{ojs}
+modelResults ? plotResults(treatGroupIds[2]) : plotTrends(treatGroupIds[2]);
+```
+
+## Row 2
+
+```{ojs}
+modelResults ? plotResults(treatGroupIds[3]) : plotTrends(treatGroupIds[3]);
+```
+
+```{ojs}
+modelResults ? plotResults(treatGroupIds[4]) : plotTrends(treatGroupIds[4]);
+```
+
+```{ojs}
+modelResults ? plotResults(treatGroupIds[5]) : plotTrends(treatGroupIds[5]);
+```
+
+## Row 3
+
+```{ojs}
+modelResults ? plotResults(treatGroupIds[6]) : plotTrends(treatGroupIds[6]);
+```
+
+```{ojs}
+modelResults ? plotResults(treatGroupIds[7]) : plotTrends(treatGroupIds[7]);
+```
+
+```{ojs}
+modelResults ? plotResults(treatGroupIds[8]) : plotTrends(treatGroupIds[8]);
+```
+
+## Row 4
+
+```{ojs}
+modelResults ? plotResults(treatGroupIds[9]) : plotTrends(treatGroupIds[9]);
+```
+
+```{ojs}
+modelResults ? plotResults(treatGroupIds[10]) : plotTrends(treatGroupIds[10]);
+```
+
+```{ojs}
+{
+  if (stacked !== 'no') {
+    if (Number(treatGroupIds[11]) + Number(stacked) - 1 <= 2019) {
+      return modelResults ? 
+        plotResults(treatGroupIds[11]) : plotTrends(treatGroupIds[11]);
+    } else {
+      return '';
+    }
+  } else {
+    return modelResults ? 
+      plotResults(treatGroupIds[11]) : plotTrends(treatGroupIds[11]);
+  }
+}
+```
+
+## Row 5
+
+```{ojs}
+{
+  if (stacked !== 'no') {
+    if (Number(treatGroupIds[12]) + Number(stacked) - 1 <= 2019) {
+      return modelResults ? 
+        plotResults(treatGroupIds[12]) : plotTrends(treatGroupIds[12]);
+    } else {
+      return '';
+    }
+  } else {
+    return modelResults ? 
+      plotResults(treatGroupIds[12]) : plotTrends(treatGroupIds[12]);
+  }
+}
+```
+
+```{ojs}
+{
+  if (stacked !== 'no') {
+    if (Number(treatGroupIds[13]) + Number(stacked) - 1 <= 2019) {
+      return modelResults ? 
+        plotResults(treatGroupIds[13]) : plotTrends(treatGroupIds[13]);
+    } else {
+      return '';
+    }
+  } else {
+    return modelResults ? 
+      plotResults(treatGroupIds[13]) : plotTrends(treatGroupIds[13]);
+  }
+}
+```
+
+```{ojs}
+{
+  if (treatGroupIds.length > 14) {
+    if (stacked !== 'no') {
+      if (Number(treatGroupIds[14]) + Number(stacked) - 1 <= 2019) {
+        return modelResults ? 
+          plotResults(treatGroupIds[14]) : plotTrends(treatGroupIds[14]);
+      } else {
+        return '';
+      }
+    } else {
+      return modelResults ? 
+        plotResults(treatGroupIds[14]) : plotTrends(treatGroupIds[14]);
+    }
+  } else {
+    return '';
+  }
+}
+```
+
+## Row 6
+
+```{ojs}
+{
+  if (treatGroupIds.length > 15) {
+    if (stacked !== 'no') {
+      if (Number(treatGroupIds[15]) + Number(stacked) - 1 <= 2019) {
+        return modelResults ? 
+          plotResults(treatGroupIds[15]) : plotTrends(treatGroupIds[15]);
+      } else {
+        return '';
+      }
+    } else {
+      return modelResults ? 
+        plotResults(treatGroupIds[15]) : plotTrends(treatGroupIds[15]);
+    }
+  } else {
+    return '';
+  }
+}
+```
+
+```{ojs}
+{
+  if (treatGroupIds.length > 16) {
+    if (stacked !== 'no') {
+      if (Number(treatGroupIds[16]) + Number(stacked) - 1 <= 2019) {
+        return modelResults ? 
+          plotResults(treatGroupIds[16]) : plotTrends(treatGroupIds[16]);
+      } else {
+        return '';
+      }
+    } else {
+      return modelResults ? 
+        plotResults(treatGroupIds[16]) : plotTrends(treatGroupIds[16]);
+    }
+  } else {
+    return '';
+  }
+}
+```
+
+```{ojs}
+{
+  if (treatGroupIds.length > 17) {
+    if (stacked !== 'no') {
+      if (Number(treatGroupIds[17]) + Number(stacked) - 1 <= 2019) {
+        return modelResults ? 
+          plotResults(treatGroupIds[17]) : plotTrends(treatGroupIds[17]);
+      } else {
+        return '';
+      }
+    } else {
+      return modelResults ? 
+        plotResults(treatGroupIds[17]) : plotTrends(treatGroupIds[17]);
+    }
+  } else {
+    return '';
+  }
+}
+```
+
+# Individual States {scrolling="true"}
+
+## Row 1
+
+```{ojs}
+{
+  if (stacked !== 'no') {
+    if (Number(treatStYears[0]) + Number(stacked) - 1 <= 2019) {
+      return modelResults ? 
+        plotResults(treatStIds[0]) : plotTrends(treatStIds[0]);
+    } else {
+      return '';
+    }
+  } else {
+    return modelResults ? plotResults(treatStIds[0]) : plotTrends(treatStIds[0]);
+  }
+}
+```
+
+```{ojs}
+{
+  if (stacked !== 'no') {
+    if (Number(treatStYears[1]) + Number(stacked) - 1 <= 2019) {
+      return modelResults ? 
+        plotResults(treatStIds[1]) : plotTrends(treatStIds[1]);
+    } else {
+      return '';
+    }
+  } else {
+    return modelResults ? plotResults(treatStIds[1]) : plotTrends(treatStIds[1]);
+  }
+}
+```
+
+```{ojs}
+{
+  if (stacked !== 'no') {
+    if (Number(treatStYears[2]) + Number(stacked) - 1 <= 2019) {
+      return modelResults ? 
+        plotResults(treatStIds[2]) : plotTrends(treatStIds[2]);
+    } else {
+      return '';
+    }
+  } else {
+    return modelResults ? plotResults(treatStIds[2]) : plotTrends(treatStIds[2]);
+  }
+}
+```
+
+## Row 2
+
+```{ojs}
+{
+  if (stacked !== 'no') {
+    if (Number(treatStYears[3]) + Number(stacked) - 1 <= 2019) {
+      return modelResults ? 
+        plotResults(treatStIds[3]) : plotTrends(treatStIds[3]);
+    } else {
+      return '';
+    }
+  } else {
+    return modelResults ? plotResults(treatStIds[3]) : plotTrends(treatStIds[3]);
+  }
+}
+```
+
+```{ojs}
+{
+  if (stacked !== 'no') {
+    if (Number(treatStYears[4]) + Number(stacked) - 1 <= 2019) {
+      return modelResults ? 
+        plotResults(treatStIds[4]) : plotTrends(treatStIds[4]);
+    } else {
+      return '';
+    }
+  } else {
+    return modelResults ? plotResults(treatStIds[4]) : plotTrends(treatStIds[4]);
+  }
+}
+```
+
+```{ojs}
+{
+  if (stacked !== 'no') {
+    if (Number(treatStYears[5]) + Number(stacked) - 1 <= 2019) {
+      return modelResults ? 
+        plotResults(treatStIds[5]) : plotTrends(treatStIds[5]);
+    } else {
+      return '';
+    }
+  } else {
+    return modelResults ? plotResults(treatStIds[5]) : plotTrends(treatStIds[5]);
+  }
+}
+```
+
+## Row 3
+
+```{ojs}
+{
+  if (stacked !== 'no') {
+    if (Number(treatStYears[6]) + Number(stacked) - 1 <= 2019) {
+      return modelResults ? 
+        plotResults(treatStIds[6]) : plotTrends(treatStIds[6]);
+    } else {
+      return '';
+    }
+  } else {
+    return modelResults ? plotResults(treatStIds[6]) : plotTrends(treatStIds[6]);
+  }
+}
+```
+
+```{ojs}
+{
+  if (stacked !== 'no') {
+    if (Number(treatStYears[7]) + Number(stacked) - 1 <= 2019) {
+      return modelResults ? 
+        plotResults(treatStIds[7]) : plotTrends(treatStIds[7]);
+    } else {
+      return '';
+    }
+  } else {
+    return modelResults ? plotResults(treatStIds[7]) : plotTrends(treatStIds[7]);
+  }
+}
+```
+
+```{ojs}
+{
+  if (stacked !== 'no') {
+    if (Number(treatStYears[8]) + Number(stacked) - 1 <= 2019) {
+      return modelResults ? 
+        plotResults(treatStIds[8]) : plotTrends(treatStIds[8]);
+    } else {
+      return '';
+    }
+  } else {
+    return modelResults ? plotResults(treatStIds[8]) : plotTrends(treatStIds[8]);
+  }
+}
+```
+
+## Row 4
+
+```{ojs}
+{
+  if (stacked !== 'no') {
+    if (Number(treatStYears[9]) + Number(stacked) - 1 <= 2019) {
+      return modelResults ? 
+        plotResults(treatStIds[9]) : plotTrends(treatStIds[9]);
+    } else {
+      return '';
+    }
+  } else {
+    return modelResults ? plotResults(treatStIds[9]) : plotTrends(treatStIds[9]);
+  }
+}
+```
+
+```{ojs}
+{
+  if (stacked !== 'no') {
+    if (Number(treatStYears[10]) + Number(stacked) - 1 <= 2019) {
+      return modelResults ? 
+        plotResults(treatStIds[10]) : plotTrends(treatStIds[10]);
+    } else {
+      return '';
+    }
+  } else {
+    return modelResults ? plotResults(treatStIds[10]) : plotTrends(treatStIds[10]);
+  }
+}
+```
+
+```{ojs}
+{
+  if (stacked !== 'no') {
+    if (Number(treatStYears[11]) + Number(stacked) - 1 <= 2019) {
+      return modelResults ? 
+        plotResults(treatStIds[11]) : plotTrends(treatStIds[11]);
+    } else {
+      return '';
+    }
+  } else {
+    return modelResults ? plotResults(treatStIds[11]) : plotTrends(treatStIds[11]);
+  }
+}
+```
+
+## Row 5
+
+```{ojs}
+{
+  if (stacked !== 'no') {
+    if (Number(treatStYears[12]) + Number(stacked) - 1 <= 2019) {
+      return modelResults ? 
+        plotResults(treatStIds[12]) : plotTrends(treatStIds[12]);
+    } else {
+      return '';
+    }
+  } else {
+    return modelResults ? plotResults(treatStIds[12]) : plotTrends(treatStIds[12]);
+  }
+}
+```
+
+```{ojs}
+{
+  if (stacked !== 'no') {
+    if (Number(treatStYears[13]) + Number(stacked) - 1 <= 2019) {
+      return modelResults ? 
+        plotResults(treatStIds[13]) : plotTrends(treatStIds[13]);
+    } else {
+      return '';
+    }
+  } else {
+    return modelResults ? plotResults(treatStIds[13]) : plotTrends(treatStIds[13]);
+  }
+}
+```
+
+```{ojs}
+{
+  if (stacked !== 'no') {
+    if (Number(treatStYears[14]) + Number(stacked) - 1 <= 2019) {
+      return modelResults ? 
+        plotResults(treatStIds[14]) : plotTrends(treatStIds[14]);
+    } else {
+      return '';
+    }
+  } else {
+    return modelResults ? plotResults(treatStIds[14]) : plotTrends(treatStIds[14]);
+  }
+}
+```
+
+## Row 6
+
+```{ojs}
+{
+  if (stacked !== 'no') {
+    if (Number(treatStYears[15]) + Number(stacked) - 1 <= 2019) {
+      return modelResults ? 
+        plotResults(treatStIds[15]) : plotTrends(treatStIds[15]);
+    } else {
+      return '';
+    }
+  } else {
+    return modelResults ? plotResults(treatStIds[15]) : plotTrends(treatStIds[15]);
+  }
+}
+```
+
+```{ojs}
+{
+  if (stacked !== 'no') {
+    if (Number(treatStYears[16]) + Number(stacked) - 1 <= 2019) {
+      return modelResults ? 
+        plotResults(treatStIds[16]) : plotTrends(treatStIds[16]);
+    } else {
+      return '';
+    }
+  } else {
+    return modelResults ? plotResults(treatStIds[16]) : plotTrends(treatStIds[16]);
+  }
+}
+```
+
+```{ojs}
+{
+  if (stacked !== 'no') {
+    if (Number(treatStYears[17]) + Number(stacked) - 1 <= 2019) {
+      return modelResults ? 
+        plotResults(treatStIds[17]) : plotTrends(treatStIds[17]);
+    } else {
+      return '';
+    }
+  } else {
+    return modelResults ? plotResults(treatStIds[17]) : plotTrends(treatStIds[17]);
+  }
+}
+```
+
+## Row 7
+
+```{ojs}
+{
+  if (stacked !== 'no') {
+    if (Number(treatStYears[18]) + Number(stacked) - 1 <= 2019) {
+      return modelResults ? 
+        plotResults(treatStIds[18]) : plotTrends(treatStIds[18]);
+    } else {
+      return '';
+    }
+  } else {
+    return modelResults ? plotResults(treatStIds[18]) : plotTrends(treatStIds[18]);
+  }
+}
+```
+
+```{ojs}
+{
+  if (stacked !== 'no') {
+    if (Number(treatStYears[19]) + Number(stacked) - 1 <= 2019) {
+      return modelResults ? 
+        plotResults(treatStIds[19]) : plotTrends(treatStIds[19]);
+    } else {
+      return '';
+    }
+  } else {
+    return modelResults ? plotResults(treatStIds[19]) : plotTrends(treatStIds[19]);
+  }
+}
+```
+
+```{ojs}
+{
+  if (stacked !== 'no') {
+    if (Number(treatStYears[20]) + Number(stacked) - 1 <= 2019) {
+      return modelResults ? 
+        plotResults(treatStIds[20]) : plotTrends(treatStIds[20]);
+    } else {
+      return '';
+    }
+  } else {
+    return modelResults ? plotResults(treatStIds[20]) : plotTrends(treatStIds[20]);
+  }
+}
+```
+
+## Row 8
+
+```{ojs}
+{
+  if (stacked !== 'no') {
+    if (Number(treatStYears[21]) + Number(stacked) - 1 <= 2019) {
+      return modelResults ? 
+        plotResults(treatStIds[21]) : plotTrends(treatStIds[21]);
+    } else {
+      return '';
+    }
+  } else {
+    return modelResults ? plotResults(treatStIds[21]) : plotTrends(treatStIds[21]);
+  }
+}
+```
+
+```{ojs}
+{
+  if (treatStIds.length > 22) {
+    if (stacked !== 'no') {
+      if (Number(treatStYears[22]) + Number(stacked) - 1 <= 2019) {
+        return modelResults ? 
+          plotResults(treatStIds[22]) : plotTrends(treatStIds[22]);
+      } else {
+        return '';
+      }
+    } else {
+      return modelResults ? plotResults(treatStIds[22]) : plotTrends(treatStIds[22]);
+    }
+  } else {
+    return '';
+  }
+}
+```
+
+```{ojs}
+{
+  if (treatStIds.length > 23) {
+    if (stacked !== 'no') {
+      if (Number(treatStYears[23]) + Number(stacked) - 1 <= 2019) {
+        return modelResults ? 
+          plotResults(treatStIds[23]) : plotTrends(treatStIds[23]);
+      } else {
+        return '';
+      }
+    } else {
+      return modelResults ? plotResults(treatStIds[23]) : plotTrends(treatStIds[23]);
+    }
+  } else {
+    return '';
+  }
+}
+```
+
+## Row 9
+
+```{ojs}
+{
+  if (treatStIds.length > 24) {
+    if (stacked !== 'no') {
+      if (Number(treatStYears[24]) + Number(stacked) - 1 <= 2019) {
+        return modelResults ? 
+          plotResults(treatStIds[24]) : plotTrends(treatStIds[24]);
+      } else {
+        return '';
+      }
+    } else {
+      return modelResults ? plotResults(treatStIds[24]) : plotTrends(treatStIds[24]);
+    }
+  } else {
+    return '';
+  }
+}
+```
+
+```{ojs}
+{
+  if (treatStIds.length > 25) {
+    if (stacked !== 'no') {
+      if (Number(treatStYears[25]) + Number(stacked) - 1 <= 2019) {
+        return modelResults ? 
+          plotResults(treatStIds[25]) : plotTrends(treatStIds[25]);
+      } else {
+        return '';
+      }
+    } else {
+      return modelResults ? plotResults(treatStIds[25]) : plotTrends(treatStIds[25]);
+    }
+  } else {
+    return '';
+  }
+}
+```
+
+```{ojs}
+{
+  if (treatStIds.length > 26) {
+    if (stacked !== 'no') {
+      if (Number(treatStYears[26]) + Number(stacked) - 1 <= 2019) {
+        return modelResults ? 
+          plotResults(treatStIds[26]) : plotTrends(treatStIds[26]);
+      } else {
+        return '';
+      }
+    } else {
+      return modelResults ? plotResults(treatStIds[26]) : plotTrends(treatStIds[26]);
+    }
+  } else {
+    return '';
+  }
+}
+```
+
+## Row 10
+
+```{ojs}
+{
+  if (treatStIds.length > 27) {
+    if (stacked !== 'no') {
+      if (Number(treatStYears[27]) + Number(stacked) - 1 <= 2019) {
+        return modelResults ? 
+          plotResults(treatStIds[27]) : plotTrends(treatStIds[27]);
+      } else {
+        return '';
+      }
+    } else {
+      return modelResults ? plotResults(treatStIds[27]) : plotTrends(treatStIds[27]);
+    }
+  } else {
+    return '';
+  }
+}
+```
+
+```{ojs}
+{
+  if (treatStIds.length > 28) {
+    if (stacked !== 'no') {
+      if (Number(treatStYears[28]) + Number(stacked) - 1 <= 2019) {
+        return modelResults ? 
+          plotResults(treatStIds[28]) : plotTrends(treatStIds[28]);
+      } else {
+        return '';
+      }
+    } else {
+      return modelResults ? plotResults(treatStIds[28]) : plotTrends(treatStIds[28]);
+    }
+  } else {
+    return '';
+  }
+}
+```
+
+```{ojs}
+'';
+```
